@@ -60,12 +60,13 @@ class QuanSim:
             dish = cust.get("dish_id")
             cust.setdefault("state", "waiting")
             cust.setdefault("order_tick", 0)
-            cust.setdefault("order_id", None)
+            cust.setdefault("order_id", cust["id"])
             cust.setdefault("order_status", "reserved")
             cust.setdefault("patience_ticks_left", self.patience_ticks)
             cust.setdefault("patience_max", self.patience_ticks)
             cust.setdefault("reserved", dict(self.menu.get(dish, {}).get("recipe", {})))
             cust.setdefault("price", int(self.menu.get(dish, {}).get("price", 0)))
+            cust.setdefault("base_price", cust["price"])
             cust.setdefault("tip", 0)
             cust.setdefault("stove_id", None)
             self.customers.append(cust)
@@ -76,8 +77,8 @@ class QuanSim:
         for st in self.stoves:
             if st.get("order_id"):
                 self.ids.reserve(st["order_id"])
-        self.money = 0
-        self.earned = 0
+        self.money = int(scenario.get("money", 0))
+        self.earned = int(scenario.get("earned", self.money))
         self.shift_earned = 0
         self.done = False
         self.reason = None
@@ -150,12 +151,16 @@ class QuanSim:
             events.append(("no_dish", {}))
             return
         recipe = dict(self.menu[dish]["recipe"])
-        cust = {"id": self.ids.new("C"), "table_id": table["id"], "dish_id": dish, "state": "waiting",
-                "order_tick": self.steps, "order_id": self.ids.new("O"), "order_status": "reserved",
+        cid = self.ids.new("C")
+        price = int(self.menu[dish]["price"])
+        cust = {"id": cid, "table_id": table["id"], "dish_id": dish, "state": "waiting",
+                "order_tick": self.steps, "order_id": cid, "order_status": "reserved",
                 "patience_ticks_left": self.patience_ticks, "patience_max": self.patience_ticks,
-                "reserved": recipe, "price": int(self.menu[dish]["price"]), "tip": 0, "stove_id": None}
+                "reserved": recipe, "price": price, "base_price": price, "tip": 0, "stove_id": None}
         self.customers.append(cust)
         self._add_reserved(recipe)
+        events.append(("customer_arrived", {"customer_id": cid, "table_id": table["id"],
+                                             "dish_id": dish, "order_id": cid}))
 
     def _clamp_rep(self, value):
         lo = float(self.t.get("reputation_min", 0))
@@ -170,7 +175,7 @@ class QuanSim:
         if reason == "patience":
             self.reputation = self._clamp_rep(self.reputation + float(self.t.get("left_reputation_delta", 0.0)))
         events.append(("customer_left", {"customer_id": cust["id"], "table_id": cust["table_id"],
-                                         "reason": reason}))
+                                         "order_id": cust.get("order_id"), "reason": reason}))
 
     # --- bếp / bàn -------------------------------------------------------------
     def _customer_by_order(self, order_id):
@@ -234,13 +239,16 @@ class QuanSim:
         st.update(state="cooking", dish=dish, order_id=order["order_id"],
                   cook_ticks_left=int(round(self.menu[dish]["cook_s"] * TICK)), ready_ticks=0)
         events.append(("cook_started", {"stove_id": st["id"], "order_id": order["order_id"],
-                                         "dish_id": dish, "table_id": order["table_id"]}))
+                                         "dish_id": dish, "table_id": order["table_id"],
+                                         "base_price": int(self.menu[dish]["price"])}))
 
     def _use_table(self, tb, events):
         cust = self._customer_at(tb["id"])
         if cust is None or cust.get("state") != "waiting" or not isinstance(self.hand, dict):
             return
-        if self.hand.get("dish_id") != cust.get("dish_id") or self.hand.get("order_id") != cust.get("order_id"):
+        if self.hand.get("dish_id") != cust.get("dish_id"):
+            return
+        if self.hand.get("order_id") is not None and self.hand.get("order_id") != cust.get("order_id"):
             return
         pmax = int(cust.get("patience_max") or self.patience_ticks)
         ratio = int(cust.get("patience_ticks_left", 0)) / float(pmax)
@@ -251,7 +259,8 @@ class QuanSim:
         cust["tip"] = tip
         cust["order_status"] = "served"
         events.append(("served", {"table_id": tb["id"], "customer_id": cust["id"],
-                                   "dish_id": cust["dish_id"], "order_id": cust["order_id"]}))
+                                   "dish_id": cust["dish_id"], "order_id": cust["order_id"],
+                                   "tip": tip}))
     # --- vòng chạy -------------------------------------------------------------
     def _tick_stoves(self, events):
         for st in sort_by_id(self.stoves):
@@ -272,10 +281,10 @@ class QuanSim:
         for c in sort_by_id([c for c in self.customers if c.get("state") == "eating"]):
             c["eat_ticks_left"] = max(0, int(c.get("eat_ticks_left", 0)) - 1)
             if c["eat_ticks_left"] == 0:
-                self._pay(c, events)
+                self._pay(c, events, reason="finished_eating")
 
-    def _pay(self, cust, events):
-        price = int(cust.get("price", 0))
+    def _pay(self, cust, events, reason="finished_eating"):
+        price = int(cust.get("price", cust.get("base_price", 0)))
         tip = int(cust.get("tip", 0))
         total = price + tip
         self.money += total
@@ -288,11 +297,11 @@ class QuanSim:
         self.served += 1
         events.append(("paid", {"customer_id": cust["id"], "table_id": cust["table_id"],
                                 "dish_id": cust.get("dish_id"), "price": price, "tip": tip,
-                                "money": self.money}))
+                                "amount": total, "reason": reason, "money": self.money}))
 
     def _close_shift(self, events):
         for c in sort_by_id([c for c in self.customers if c.get("state") == "eating"]):
-            self._pay(c, events)
+            self._pay(c, events, reason="closing")
         for c in sort_by_id(list(self.customers)):
             self._customer_left(c, events, reason="closing")
         for st in self.stoves:
