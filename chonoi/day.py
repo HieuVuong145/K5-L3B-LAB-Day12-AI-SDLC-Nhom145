@@ -136,9 +136,14 @@ class DaySim:
 
     # --- dựng Ngày ------------------------------------------------------------
     def _plan_for(self, day):
+        if not self.plan:
+            return {"day": day, "dishes": {}, "ingredients": {}}
+        cycle_day = ((day - 1) % len(self.plan)) + 1
         for item in self.plan:
-            if int(item.get("day", 0)) == day:
-                return item
+            if int(item.get("day", 0)) == cycle_day:
+                d = dict(item)
+                d["day"] = day
+                return d
         return {"day": day, "dishes": {}, "ingredients": {}}
 
     def _ingredients(self, plan):

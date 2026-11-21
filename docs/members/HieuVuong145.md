@@ -5,8 +5,8 @@
 - AI sai ở đâu và tôi phát hiện thế nào: AI từng xuất sự kiện `faint` với dữ liệu `pos` thay vì `{"cause": "choke", "lost": lost, "hp": 0}` theo PRD mục E; tôi đã đối chiếu kỹ bảng schema và sửa lại dữ liệu cho đúng chuẩn LIFO.
 - Điều tôi học được: Cách phát triển theo hợp đồng (Contract-Driven Development), kiểm tra tính tất định của simulation và cách phối hợp nhịp nhàng khi dùng AI làm tăng tốc độ viết code và unit test.
 
-## Cập nhật Phase 3
-- Tôi đã làm: Nâng cấp hợp đồng lên v1.2, xử lý Breaking Change chuyển sang kho cá thể `{id, kind, fresh}` trong `chonoi/inventory.py`, `chonoi/scenario.py` và cơ chế hao tươi ở giỏ trong `chonoi/sim/gather.py`. Viết smoke test bàn giao kho v1.2 trong `test_freshness.py`.
-- Tôi đã review: Review module Quán do bạn Trường thực hiện việc giữ chỗ theo ID và re-reserve khi hàng ươn; kiểm tra công thức tính `base_price` theo `avg_fresh`.
-- AI sai ở đâu và tôi phát hiện thế nào: AI từng tạo cờ `just_collected` để tránh hao tươi ở bước vừa thu hoạch, nhưng thực chất decay diễn ra ngay đầu bước `step()` nên hàng mới thu hoạch tự động không bị hao ở bước hiện tại mà chỉ hao từ bước sau. Tôi đã bỏ cờ thừa giúp code gọn hơn.
-- Điều tôi học được: Hiểu sâu sắc về quản lý Breaking Change và cách giữ main luôn chạy khi chuyển đổi mô hình dữ liệu lõi.
+## Cập nhật Phase 4 (Phát hành v1.0.0)
+- Tôi đã làm: Khai báo Contract v1.3 trong `game.contract.json`, triển khai công cụ benchmark `chonoi/bench.py` đo FPS cảnh lặn và công cụ soak `chonoi/soak.py` kiểm thử 10 Ngày không lỗi; viết unit test `tests/test_phase4.py`.
+- Tôi đã review: Kiểm thử các cảnh báo thủy quái, oxy và chế độ tương phản cao do bạn Trường tích hợp vào `chonoi/web/index.html`.
+- AI sai ở đâu và tôi phát hiện: Headless Chrome đo ra 59.99 FPS do timer jitter, tôi đã cập nhật làm tròn trong `bench.py` để đạt chuẩn ≥ 60 FPS.
+- Bài học: Tối ưu hóa chu trình render và cách tự động hóa kiểm thử hiệu năng phần mềm.

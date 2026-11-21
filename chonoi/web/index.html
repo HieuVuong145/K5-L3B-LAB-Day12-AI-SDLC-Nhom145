@@ -22,6 +22,21 @@ const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
 let snap = null, offline = false;
 
+// URL parameters: bench & contrast
+const urlParams = new URLSearchParams(window.location.search);
+const benchMode = urlParams.get("bench") === "1";
+const benchDuration = parseFloat(urlParams.get("duration") || "30");
+let highContrast = urlParams.get("contrast") === "high";
+
+let benchLoadMs = 0;
+let benchStart = performance.now();
+let benchWarmupEnd = benchStart + 3000;
+let benchMeasureEnd = benchWarmupEnd + (benchDuration * 1000);
+let benchFrameDurations = [];
+let benchLastFrame = 0;
+let benchDoneSent = false;
+let hcToggleBtn = null;
+
 // ---------- vào: phím ----------
 const down = new Set();
 const MOVE_KEYS = { w: "u", arrowup: "u", s: "d", arrowdown: "d", a: "l", arrowleft: "l", d: "r", arrowright: "r" };
@@ -74,6 +89,7 @@ addEventListener("keydown", (e) => {
   else if (k === "enter") { if (snap && snap.phase === "shop") sendOnce({ shop_done: true }); }
   else if (k === "x") { sendOnce({ drop: -1 }); }
   else if (k === "c") { sendOnce({ close_shift: true }); }
+  else if (k === "h") { highContrast = !highContrast; }
   intro = null;
   pushInput();
 });
@@ -110,6 +126,11 @@ const DISH_NAME = { ca_loc_nuong_trui: "Ca loc nuong trui", goi_bong_sung: "Goi 
   ca_keo_nuong: "Ca keo nuong muoi ot", lau_mam: "Lau mam mien Tay" };
 
 function fit() {
+  if (benchMode) {
+    if (cv.width !== 1280 || cv.height !== 720) { cv.width = 1280; cv.height = 720; }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return [1280, 720];
+  }
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = innerWidth, h = innerHeight;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
@@ -117,17 +138,25 @@ function fit() {
   return [w, h];
 }
 function text(s, x, y, o = {}) {
-  ctx.font = (o.size || 14) + "px system-ui, sans-serif";
-  ctx.fillStyle = o.color || "#e8eef2";
+  const weight = o.bold ? "bold " : (highContrast ? "bold " : "");
+  ctx.font = weight + (o.size || 14) + "px system-ui, sans-serif";
+  let col = o.color || "#e8eef2";
+  if (highContrast && (!o.color || o.color === "#e8eef2" || o.color === "#cfe9f5")) {
+    col = "#FFFFFF";
+  }
+  ctx.fillStyle = col;
   ctx.textAlign = o.align || "left";
   ctx.textBaseline = o.base || "alphabetic";
   ctx.fillText(s, x, y);
 }
 function bar(x, y, w, h, frac, color, label) {
-  ctx.fillStyle = "rgba(0,0,0,.45)"; ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = color; ctx.fillRect(x, y, w * Math.max(0, Math.min(1, frac)), h);
-  ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
-  if (label) text(label, x + w / 2, y + h - 3, { size: 11, align: "center" });
+  ctx.fillStyle = highContrast ? "#000000" : "rgba(0,0,0,.45)"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = highContrast ? (frac < 0.25 ? "#FF0000" : (frac < 0.5 ? "#FFFF00" : "#00FF00")) : color;
+  ctx.fillRect(x, y, w * Math.max(0, Math.min(1, frac)), h);
+  ctx.strokeStyle = highContrast ? "#FFFFFF" : "rgba(255,255,255,.5)";
+  ctx.lineWidth = highContrast ? 2 : 1;
+  ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+  if (label) text(label, x + w / 2, y + h - 3, { size: 11, align: "center", bold: highContrast });
 }
 function fmtTime(ticks) {
   const s = Math.ceil(ticks / 60);
@@ -142,11 +171,23 @@ function eventLog(w, h) {
 }
 function overlay(w, h) {
   if (offline) text("Mất kết nối tới máy chủ (đã tắt chưa?)", w / 2, 30, { align: "center", color: "#ff8a80", size: 16 });
-  if (snap.error) text("Luật của nhóm báo lỗi — xem terminal. R để chơi lại.", w / 2, 52, { align: "center", color: "#ff8a80", size: 15 });
-  if (snap.finished && snap.mode !== "day") {
+  if (snap && snap.error) text("Luật của nhóm báo lỗi — xem terminal. R để chơi lại.", w / 2, 52, { align: "center", color: "#ff8a80", size: 15 });
+  if (snap && snap.finished && snap.mode !== "day") {
     ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillRect(w / 2 - 190, h / 2 - 50, 380, 100);
     text("Buổi " + (snap.mode === "gather" ? "sáng" : "tối") + " kết thúc: " + (snap.reason || ""), w / 2, h / 2 - 12, { align: "center", size: 20 });
     text("Nhấn R để chơi lại", w / 2, h / 2 + 20, { align: "center", color: "#cfd8dc" });
+  }
+  // Nút tương phản cao
+  if (!benchMode) {
+    hcToggleBtn = { x: w - 180, y: 12, w: 168, h: 28 };
+    panel(hcToggleBtn.x, hcToggleBtn.y, hcToggleBtn.w, hcToggleBtn.h, {
+      fill: highContrast ? "#000000" : "rgba(10,26,36,.82)",
+      stroke: highContrast ? "#FFFF00" : "rgba(170,225,240,.35)",
+      lw: highContrast ? 3 : 1
+    });
+    text(highContrast ? "👁️ Tương phản: BẬT (H)" : "👁️ Tương phản: TẮT (H)", hcToggleBtn.x + hcToggleBtn.w / 2, hcToggleBtn.y + 19, {
+      size: 11, align: "center", color: highContrast ? "#FFFF00" : "#cfe9f5", bold: highContrast
+    });
   }
 }
 
@@ -182,15 +223,22 @@ function rr(x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, k);
   ctx.closePath();
 }
-function panel(x, y, w, h) {
-  ctx.fillStyle = "rgba(0,0,0,.35)";
-  rr(x + 2, y + 3, w, h, 14);
-  ctx.fill();
-  ctx.fillStyle = "rgba(10,26,36,.82)";
+function panel(x, y, w, h, opts = {}) {
+  if (highContrast) {
+    ctx.fillStyle = opts.fill || "#000000";
+    rr(x, y, w, h, 8);
+    ctx.fill();
+    ctx.strokeStyle = opts.stroke || "#FFFF00";
+    ctx.lineWidth = opts.lw || 3;
+    rr(x + .5, y + .5, w - 1, h - 1, 8);
+    ctx.stroke();
+    return;
+  }
+  ctx.fillStyle = opts.fill || "rgba(10,26,36,.82)";
   rr(x, y, w, h, 14);
   ctx.fill();
-  ctx.strokeStyle = "rgba(170,225,240,.20)";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = opts.stroke || "rgba(170,225,240,.20)";
+  ctx.lineWidth = opts.lw || 1;
   rr(x + .5, y + .5, w - 1, h - 1, 14);
   ctx.stroke();
 }
@@ -1009,6 +1057,15 @@ function drawQuan(w, h) {
   (snap.tables || []).forEach((tb) => {
     text(tb.id, sx(tb.pos[0]) - s * 0.62, sy(tb.pos[1]) + s * 0.5, { size: 9, color: "rgba(255,240,220,.65)" });
   });
+  const angryCust = (snap.customers || []).find((c) => c.state === "waiting" && (c.patience_ticks_left / (c.patience_ticks_max || 3600)) < 0.3);
+  if (angryCust) {
+    const strokeCol = highContrast ? "#FF0000" : "#ff5252";
+    const bgCol = highContrast ? "#000000" : "rgba(140,20,20,.85)";
+    const textCol = highContrast ? "#FFFF00" : "#ffebee";
+    const sLeft = Math.ceil((angryCust.patience_ticks_left || 0) / 60);
+    panel(w / 2 - 180, 70, 360, 42, { fill: bgCol, stroke: strokeCol, lw: highContrast ? 4 : 2 });
+    text("⚠️ KHÁCH SẮP GIẬN! 💢 Bàn " + angryCust.table_id + " (còn " + sLeft + "s)", w / 2, 96, { size: 16, align: "center", color: textCol, bold: true });
+  }
   // nguoi choi (nhin tu tren)
   const p = snap.player;
   if (p) {
@@ -1121,23 +1178,34 @@ function gatherWarnings(w, h) {
   const list = snap.monsters || [];
   const near = list.some((m) => m.state !== "recoil" && Math.hypot(m.pos[0] - p.pos[0], m.pos[1] - p.pos[1]) <= 10);
   if (near) {
-    ctx.strokeStyle = "rgba(186,104,255,.85)"; ctx.lineWidth = 6;
-    ctx.strokeRect(3, 3, w - 6, h - 6);
-    text("TH\u1ee6Y QU\u00c1I!", w / 2, h - 92, { size: 20, align: "center", color: "#e1b6ff" });
+    const strokeCol = highContrast ? "#FFFF00" : "rgba(220,100,255,.95)";
+    const bgCol = highContrast ? "#000000" : "rgba(80,10,90,.85)";
+    const textCol = highContrast ? "#FFFF00" : "#ffb6e6";
+    ctx.strokeStyle = strokeCol; ctx.lineWidth = highContrast ? 8 : 6;
+    ctx.strokeRect(4, 4, w - 8, h - 8);
+    panel(w / 2 - 170, h - 110, 340, 44, { fill: bgCol, stroke: strokeCol, lw: highContrast ? 4 : 2 });
+    text("⚠️ CÁ SẤU ĐANG ĐẾN GẦN! 🐊", w / 2, h - 82, { size: 18, align: "center", color: textCol, bold: true });
   }
-  if (p.oxygen_ticks === 0) {
-    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(artT() * 6);
-    text("H\u1ebeT H\u01a0I!", w / 2, 128, { size: 24, align: "center", color: "#ff8a80" });
-    ctx.globalAlpha = 1;
+  if (p.oxygen_ticks !== undefined && p.oxygen_ticks <= 5 * 60) {
+    const isOut = p.oxygen_ticks === 0;
+    const strokeCol = highContrast ? "#FF0000" : (isOut ? "#ff1744" : "#ff9100");
+    const bgCol = highContrast ? "#000000" : (isOut ? "rgba(180,0,0,.9)" : "rgba(140,70,0,.85)");
+    const textCol = highContrast ? "#FFFFFF" : "#ffffff";
+    const msg = isOut ? "🚨 HẾT OXY! 🚨 (ĐANG BỊ NGẠT)" : `⚠️ OXY SẮP HẾT! 🫧 (${Math.ceil(p.oxygen_ticks / 60)}s - Hãy nổi lên ngay)`;
+    panel(w / 2 - 190, 70, 380, 42, { fill: bgCol, stroke: strokeCol, lw: highContrast ? 4 : 2 });
+    text(msg, w / 2, 96, { size: 16, align: "center", color: textCol, bold: true });
   }
   if (snap.mode === "day" && snap.day_plan) {
     const need = snap.day_plan.ingredients || {};
     const have = {};
-    (snap.hold || []).forEach((k) => { have[k] = (have[k] || 0) + 1; });
+    (snap.hold || []).forEach((it) => {
+      const k = typeof it === "object" && it !== null ? it.kind : it;
+      have[k] = (have[k] || 0) + 1;
+    });
     const rows = Object.keys(need).sort().map((k) => (KIND_NAME[k] || k) + " " + Math.min(have[k] || 0, need[k]) + "/" + need[k]);
-    panel(w / 2 - 190, 92, 380, 34 + rows.length * 16);
-    text("M\u00e1 T\u01b0 d\u1eb7n \u2014 Ng\u00e0y " + snap.day, w / 2, 116, { size: 14, align: "center", color: "#ffe9b8" });
-    rows.forEach((row, i) => text(row, w / 2, 136 + i * 16, { size: 12, align: "center", color: "#dff3f7" }));
+    panel(w / 2 - 190, 118, 380, 34 + rows.length * 16);
+    text("Má Tư dặn — Ngày " + snap.day, w / 2, 142, { size: 14, align: "center", color: "#ffe9b8" });
+    rows.forEach((row, i) => text(row, w / 2, 162 + i * 16, { size: 12, align: "center", color: "#dff3f7" }));
   }
 }
 let shopButtons = [];
@@ -1214,18 +1282,19 @@ function dayOverlay(w, h) {
   }
 }
 function menuOverlay(w, h) {
-  if (!menuOpen) return;
+  if (!menuOpen || benchMode) return;
   ctx.fillStyle = "rgba(4,12,18,.92)"; ctx.fillRect(0, 0, w, h);
-  text("QU\u00c1N \u0102N CH\u1ee2 N\u1ed4I", w / 2, h / 2 - 92, { size: 34, align: "center", color: "#ffe9b8" });
-  text("\u00dat Sen \u00b7 Ng\u00e0y \u1edf ch\u1ee3 n\u1ed5i", w / 2, h / 2 - 56, { size: 16, align: "center", color: "#cfe9f5" });
+  text("QUÁN ĂN CHỢ NỔI", w / 2, h / 2 - 92, { size: 34, align: "center", color: "#ffe9b8" });
+  text("Út Sen · Ngày ở chợ nổi", w / 2, h / 2 - 56, { size: 16, align: "center", color: "#cfe9f5" });
   panel(w / 2 - 120, h / 2 - 10, 240, 46);
-  text("CH\u01a0I (Enter / click)", w / 2, h / 2 + 19, { size: 16, align: "center", color: "#eaf9ff" });
-  text("Tho\u00e1t: \u0111\u00f3ng tab", w / 2, h / 2 + 68, { size: 12, align: "center", color: "rgba(200,230,240,.6)" });
+  text("CHƠI (Enter / click)", w / 2, h / 2 + 19, { size: 16, align: "center", color: "#eaf9ff" });
+  text("Thoát: đóng tab", w / 2, h / 2 + 68, { size: 12, align: "center", color: "rgba(200,230,240,.6)" });
 }
 cv.addEventListener("click", (e) => {
   menuOpen = false;
   const x = e.offsetX, y = e.offsetY;
   const inRect = (b) => b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  if (inRect(hcToggleBtn)) { highContrast = !highContrast; return; }
   if (inRect(closeBtn)) { sendOnce({ close_shift: true }); return; }
   if (inRect(shopCloseBtn)) { sendOnce({ shop_done: true }); return; }
   for (const b of holdSlots) { if (inRect(b)) { sendOnce({ drop: b.index }); return; } }
@@ -1234,7 +1303,7 @@ cv.addEventListener("click", (e) => {
 function frame() {
   requestAnimationFrame(frame);  // đặt trước để lỗi vẽ không làm dừng vòng lặp
   const [w, h] = fit();
-  ctx.fillStyle = "#10161c"; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = highContrast ? "#000000" : "#10161c"; ctx.fillRect(0, 0, w, h);
   if (snap) {
     if (snap.phase === "quan") drawQuan(w, h);
     else if (snap.phase === "shop") drawShop(w, h);
@@ -1242,9 +1311,47 @@ function frame() {
     eventLog(w, h);
     dayOverlay(w, h);
     overlay(w, h);
-    menuOverlay(w, h);
+    if (!benchMode) menuOverlay(w, h);
   } else {
     text(offline ? "Không kết nối được máy chủ…" : "Đang tải…", w / 2, h / 2, { align: "center", size: 18 });
+  }
+
+  // Benchmark logic
+  const now = performance.now();
+  if (benchMode && snap) {
+    if (benchLoadMs === 0) {
+      benchLoadMs = Math.max(1, Math.round(now - benchStart));
+    }
+    if (now >= benchWarmupEnd && now < benchMeasureEnd) {
+      if (benchLastFrame > 0) {
+        benchFrameDurations.push((now - benchLastFrame) / 1000);
+      }
+    }
+    benchLastFrame = now;
+    if (now >= benchMeasureEnd && !benchDoneSent && benchFrameDurations.length > 0) {
+      benchDoneSent = true;
+      const frames = benchFrameDurations.length;
+      const measured_s = benchFrameDurations.reduce((a, b) => a + b, 0);
+      const avg_fps = Math.round((frames / measured_s) * 100) / 100;
+      const sorted = [...benchFrameDurations].sort((a, b) => a - b);
+      const k = Math.max(1, Math.ceil(0.01 * frames));
+      const slowest = sorted.slice(-k);
+      const avg_slow = slowest.reduce((a, b) => a + b, 0) / k;
+      const p1_low_fps = Math.round((1.0 / avg_slow) * 100) / 100;
+      const result = {
+        avg_fps: avg_fps,
+        p1_low_fps: p1_low_fps,
+        frames: frames,
+        measured_s: Math.round(measured_s * 100) / 100,
+        load_ms: benchLoadMs
+      };
+      console.log("BENCH_RESULT:" + JSON.stringify(result));
+      fetch("/bench_done", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result)
+      }).catch(() => {});
+    }
   }
 }
 requestAnimationFrame(frame);

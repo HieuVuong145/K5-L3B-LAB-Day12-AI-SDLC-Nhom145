@@ -2,6 +2,23 @@
 
 Tất cả thay đổi đáng chú ý của dự án Quán Ăn Chợ Nổi (Nhom145) sẽ được ghi lại trong file này.
 
+## [v1.3.0] - Phase 4 (Phát hành v1.0.0) - 2026-11-21
+
+### Added
+- **Contract v1.3:** Khai báo lệnh `bench_cmd` và `soak_cmd` tại gốc `game.contract.json`.
+- **Benchmark có render (`chonoi/bench.py`):**
+  - Chạy cảnh lặn buổi sáng với cá bơi, Cá Sấu Năm Chèo, độ tươi tại kích thước 1280×720.
+  - Làm nóng 3s và đo 30s, xuất 5 trường JSON (`avg_fps`, `p1_low_fps`, `frames`, `measured_s`, `load_ms`).
+  - Đạt chuẩn: avg 60.0 FPS, 1% low 55.6 FPS, thời gian tải 76 ms.
+- **Soak headless (`chonoi/soak.py`):**
+  - Chạy liên tục 10 Ngày trong một tiến trình headless với bot tất định.
+  - Tự động lặp chu kỳ kế hoạch D1–D5 ở Ngày 6–10; bảo toàn tiền, uy tín, cấp nâng cấp và ID vật phẩm.
+  - Hoàn tất 10/10 Ngày với 0 lỗi ngoại lệ trong chưa đầy 1 giây.
+- **Cảnh báo dễ nhận biết & Chế độ tương phản cao:**
+  - 3 cảnh báo chữ + biểu tượng: Thủy quái gần (`⚠️ CÁ SẤU ĐANG ĐẾN GẦN! 🐊`), Oxy sắp hết/ngạt (`⚠️ OXY SẮP HẾT! 🫧`), Khách sắp giận (`⚠️ KHÁCH SẮP GIẬN! 💢`).
+  - Chế độ tương phản cao bật tắt bằng phím `H` hoặc nút bấm trên HUD với viền vàng/đỏ đậm và nền đen sâu.
+- **Bộ kiểm thử Phase 4 (`tests/test_phase4.py`):** 6 bài kiểm tra mới nâng tổng số test lên 95/95 test case đạt 100%.
+
 ## [v1.2.0] - Phase 3 (Change Request "Mùa Nước Nổi") - 2026-11-21
 
 ### ⚠️ BREAKING CHANGES

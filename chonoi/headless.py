@@ -59,8 +59,8 @@ def main(argv=None) -> int:
     try:
         if a.mode != "day" and a.days != 1:
             raise BadInput("--days chỉ dùng với --mode day")
-        if not (1 <= a.days <= 5):
-            raise BadInput("--days phải trong [1, 5]")
+        if not (1 <= a.days <= 10):
+            raise BadInput("--days phải trong [1, 10]")
         if a.ticks < 0:
             raise BadInput("--ticks phải >= 0")
         if a.snapshot_every <= 0:

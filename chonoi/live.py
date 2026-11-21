@@ -240,6 +240,11 @@ class _Handler(BaseHTTPRequestHandler):
                 self.game.set_input(body)
             elif path == "/restart":
                 self.game.restart()
+            elif path == "/bench_done":
+                body = json.loads(raw.decode("utf-8") or "{}")
+                self.server.bench_result = body
+                self._send(200, b'{"ok":true}')
+                return
             else:
                 self._send(404, b'{"error":"khong co"}')
                 return
@@ -268,9 +273,14 @@ class LiveServer:
         handler = type("Handler", (_Handler,), {"game": game})
         self.game = game
         self.httpd = _LiveHTTPServer((host, port), handler)
+        self.httpd.bench_result = None
         self.host = host
         self.port = self.httpd.server_address[1]
         self._thread = None
+
+    @property
+    def bench_result(self):
+        return getattr(self.httpd, "bench_result", None)
 
     @property
     def url(self):
