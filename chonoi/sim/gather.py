@@ -38,7 +38,7 @@ class GatherSim:
     mode = "gather"
     phase = "gather"
 
-    def __init__(self, tuning, scenario, streams, ids):
+    def __init__(self, tuning, scenario, streams, ids, day=1):
         t = tuning["gather"]
         self.t = t
         self.rng = streams
@@ -57,6 +57,8 @@ class GatherSim:
         self.catch_cd_ticks = p.get("catch_cd_ticks", 0)
         self.hold = list(scenario.get("hold", []))  # thứ tự nhặt, cuối mảng là mới nhất
         self.time_left_ticks = scenario.get("time_left_ticks", int(round(t["duration_s"] * TICK)))
+        self.steps = 0
+        self.day = int(day)
         # nút và đàn cá: scenario THAY THẾ danh sách mặc định; random_fish=false tắt cá mặc định
         src_nodes = scenario["nodes"] if "nodes" in scenario else t["nodes"]
         self.nodes = [{"id": n["id"], "kind": n["kind"], "pos": [float(c) for c in n["pos"]],
@@ -69,10 +71,12 @@ class GatherSim:
             src_fish = []
         # Đàn cá đứng yên ở phase này. Cá bơi / sinh thêm là việc của phase sau.
         self.fish = [{"id": f["id"], "kind": f["kind"], "pos": [float(c) for c in f["pos"]],
-                      "heading_deg": f.get("heading_deg", 0)} for f in src_fish]
+                      "heading_deg": float(f.get("heading_deg", 0)), "age_ticks": int(f.get("age_ticks", 0))}
+                     for f in src_fish]
         for coll in (self.nodes, self.fish):
             for e in coll:
                 ids.reserve(e["id"])
+        self._init_monsters(scenario)
         self.money = 0
         self.earned = 0
         self.reputation = tuning["quan"]["reputation_initial"]
@@ -95,13 +99,16 @@ class GatherSim:
             "nodes": [{"id": n["id"], "pos": n["pos"], "kind": n["kind"],
                        "ready": n["regrow_ticks"] == 0, "regrow_ticks": n["regrow_ticks"]}
                       for n in sort_by_id(self.nodes)],
-            "fish": [{"id": f["id"], "pos": f["pos"], "kind": f["kind"], "heading_deg": f["heading_deg"]}
-                     for f in sort_by_id(self.fish)],
+            "fish": [{"id": f["id"], "pos": f["pos"], "kind": f["kind"], "heading_deg": f["heading_deg"],
+                      "age_ticks": f["age_ticks"]} for f in sort_by_id(self.fish)],
+            "monsters": [{"id": m["id"], "kind": m["kind"], "pos": m["pos"], "state": m["state"],
+                          "state_ticks_left": m["state_ticks_left"]} for m in sort_by_id(self.monsters)],
         }
 
     # --- một bước ---------------------------------------------------------------
     def step(self, inp):
         events = []
+        self.steps += 1
         # 1. đồng hồ và hàng có sẵn: giảm bộ đếm, nút mọc lại
         self.time_left_ticks = max(0, self.time_left_ticks - 1)
         self.invuln_ticks = max(0, self.invuln_ticks - 1)
@@ -139,6 +146,11 @@ class GatherSim:
                     if self.hp <= 0:
                         self._faint(events)
                         return events
+        # 4b. quái: cập nhật (patrol/chase/recoil) rồi xét tối đa một hit
+        self._update_monsters(events)
+        self._monster_hit(events)
+        if self.done:
+            return events
         # 5. interact: bến trước, rồi hái
         if inp.pressed("interact"):
             if self._in_dock():
@@ -207,6 +219,10 @@ class GatherSim:
         # 7. hết giờ
         if self.time_left_ticks <= 0:
             self._finish("time", events)
+            return events
+        # 8. cá bơi, sinh thêm theo lịch
+        self._move_fish(events)
+        self._spawn_fish(events)
         return events
 
     # --- tiện ích ---------------------------------------------------------------
@@ -226,12 +242,12 @@ class GatherSim:
         self.hold.append(item_id)
         return True
 
-    def _faint(self, events):
+    def _faint(self, events, cause="choke"):
         """Ngất vì hết Máu: mất toàn bộ giỏ, kết thúc lượt với reason `fainted` (kho rỗng)."""
         lost = list(reversed(self.hold))
         self.hp = 0
         self.hold = []
-        events.append(("faint", {"cause": "choke", "lost": lost, "hp": 0}))
+        events.append(("faint", {"cause": cause, "lost": lost, "hp": 0}))
         self._finish("fainted", events)
 
     def _finish(self, reason, events):
@@ -255,3 +271,163 @@ class GatherSim:
             elif self.pos[i] >= hi:
                 self.pos[i] = hi
                 self.vel[i] = min(0.0, self.vel[i])
+
+    # --- cá bơi / sinh đàn (v1.1) ------------------------------------------------
+    def _move_fish(self, events):
+        speed = float(self.t["fish_speed"])
+        turn = int(self.t["fish_turn_ticks"])
+        lo_x, hi_x = self.t["fish_x"]
+        rng = self.rng.get("fish_move")
+        for i, f in enumerate(sort_by_id(self.fish)):
+            if f["age_ticks"] > 0 and f["age_ticks"] % turn == 0:
+                f["heading_deg"] = rng.uniform(0, 360)
+            rad = math.radians(f["heading_deg"])
+            x = f["pos"][0] + math.cos(rad) * speed / TICK
+            d = f["pos"][1] + math.sin(rad) * speed / TICK
+            lo_d, hi_d = self.t["fish_depths"][f["kind"]]
+            if x < lo_x:
+                x = lo_x + (lo_x - x)
+                f["heading_deg"] = (180.0 - f["heading_deg"]) % 360.0
+            elif x > hi_x:
+                x = hi_x - (x - hi_x)
+                f["heading_deg"] = (180.0 - f["heading_deg"]) % 360.0
+            if d < lo_d:
+                d = lo_d + (lo_d - d)
+                f["heading_deg"] = (360.0 - f["heading_deg"]) % 360.0
+            elif d > hi_d:
+                d = hi_d - (d - hi_d)
+                f["heading_deg"] = (360.0 - f["heading_deg"]) % 360.0
+            f["pos"] = [min(hi_x, max(lo_x, x)), min(float(hi_d), max(float(lo_d), d))]
+            f["age_ticks"] += 1
+
+    def _spawn_fish(self, events):
+        fp = self.t
+        if self.steps % int(fp["fish_spawn_ticks"]) != 0:
+            return
+        if len(self.fish) >= int(fp["fish_max"]):
+            return
+        clearance = float(fp["fish_spawn_clearance"])
+        points = []
+        for kind, depths in fp["fish_spawn_depths"].items():
+            for x in fp["fish_spawn_x"]:
+                for d in depths:
+                    if all(math.dist((x, d), f["pos"]) > clearance for f in self.fish):
+                        points.append((kind, float(x), float(d)))
+        if not points:
+            return
+        kinds = sorted({k for k, _, _ in points})
+        weights = [float(fp["fish_weights"].get(k, 0)) for k in kinds]
+        total = sum(weights)
+        rng = self.rng.get("fish_spawn")
+        pick = rng.random() * total
+        acc = 0.0
+        kind = kinds[-1]
+        for k, w in zip(kinds, weights):
+            acc += w
+            if pick <= acc:
+                kind = k
+                break
+        options = [(x, d) for k, x, d in points if k == kind]
+        x, d = options[rng.randrange(len(options))]
+        heading = rng.uniform(0, 360)
+        fid = self.ids.new("F")
+        self.fish.append({"id": fid, "kind": kind, "pos": [x, d], "heading_deg": heading, "age_ticks": 0})
+        events.append(("fish_spawned", {"id": fid, "kind": kind, "pos": [x, d]}))
+
+    # --- Cá Sấu (v1.1) -----------------------------------------------------------
+    def _init_monsters(self, scenario):
+        spec = self.t.get("monsters") or {}
+        species = spec.get("species", {})
+        src = scenario.get("monsters")
+        if isinstance(src, dict):
+            src = src.get("spawns", [])
+        if src is None:
+            src = [s for s in spec.get("spawns", []) if int(s.get("from_day", 1)) <= self.day]
+        self.monsters = []
+        for m in src or []:
+            kind = m.get("kind")
+            wps = [[float(c) for c in w] for w in m.get("waypoints", [])]
+            if not wps:
+                wps = [[float(c) for c in m.get("pos", [0, 0])]]
+            mon = {"id": m["id"], "kind": kind, "pos": [float(c) for c in m.get("pos", wps[0])],
+                   "waypoints": wps, "target_idx": int(m.get("target_idx", 1 if len(wps) > 1 else 0)),
+                   "state": m.get("state", "patrol"), "state_ticks_left": int(m.get("state_ticks_left", 0)),
+                   "recoil_dir": m.get("recoil_dir"), "spec": species.get(kind, {})}
+            self.monsters.append(mon)
+            self.ids.reserve(mon["id"])
+
+    def _clamp_monster(self, mon, depths, bounds):
+        lo = max(float(bounds["d"][0]), float(depths[0]))
+        hi = min(float(bounds["d"][1]), float(depths[1]))
+        mon["pos"][0] = min(float(bounds["x"][1]), max(float(bounds["x"][0]), mon["pos"][0]))
+        mon["pos"][1] = min(hi, max(lo, mon["pos"][1]))
+
+    def _move_toward(self, mon, target, speed, depths, bounds):
+        dx = float(target[0]) - mon["pos"][0]
+        dy = float(target[1]) - mon["pos"][1]
+        dist = math.hypot(dx, dy)
+        step = speed / TICK
+        if dist <= step or dist == 0:
+            mon["pos"] = [float(target[0]), float(target[1])]
+        else:
+            mon["pos"][0] += dx / dist * step
+            mon["pos"][1] += dy / dist * step
+        self._clamp_monster(mon, depths, bounds)
+
+    def _update_monsters(self, events):
+        bounds = self.t["bounds"]
+        for mon in sort_by_id(self.monsters):
+            sp = mon["spec"]
+            depths = sp.get("depths", [10, 30])
+            if mon["state"] == "recoil":
+                mon["state_ticks_left"] -= 1
+                dirv = mon.get("recoil_dir") or [1.0, 0.0]
+                step = float(sp.get("recoil_dist", 2.0)) / max(1.0, float(sp.get("recoil_ticks", 60)))
+                mon["pos"][0] += dirv[0] * step
+                mon["pos"][1] += dirv[1] * step
+                self._clamp_monster(mon, depths, bounds)
+                if mon["state_ticks_left"] <= 0:
+                    mon["state"] = "patrol"
+                    mon["recoil_dir"] = None
+                continue
+            deep = self.pos[1] >= 10
+            dist = math.dist(mon["pos"], self.pos)
+            if mon["state"] == "patrol" and deep and dist <= float(sp.get("detect_radius", 10)):
+                mon["state"] = "chase"
+            elif mon["state"] == "chase" and (not deep or dist > float(sp.get("exit_radius", 16))):
+                mon["state"] = "patrol"
+            if mon["state"] == "chase":
+                self._move_toward(mon, self.pos, float(sp.get("chase_speed", 3.0)), depths, bounds)
+            else:
+                wp = mon["waypoints"][mon["target_idx"]] if mon["waypoints"] else mon["pos"]
+                self._move_toward(mon, wp, float(sp.get("patrol_speed", 1.0)), depths, bounds)
+                if len(mon["waypoints"]) == 2 and math.dist(mon["pos"], wp) < 0.05:
+                    mon["target_idx"] = 1 - mon["target_idx"]
+
+    def _monster_hit(self, events):
+        if self.invuln_ticks > 0 or self.pos[1] < 10:
+            return
+        hits = []
+        for mon in sort_by_id(self.monsters):
+            if mon["state"] == "recoil":
+                continue
+            reach = float(mon["spec"].get("hit_radius", 1.5))
+            dist = math.dist(mon["pos"], self.pos)
+            if dist <= reach:
+                hits.append((dist, mon))
+        if not hits:
+            return
+        hits.sort(key=lambda item: (item[0], id_key(item[1]["id"])))
+        mon = hits[0][1]
+        self.hp -= 1
+        lost = [self.hold.pop() for _ in range(len(self.hold) // 2)]
+        self.invuln_ticks = int(self.t.get("invuln_ticks", 90))
+        dx = mon["pos"][0] - self.pos[0]
+        dy = mon["pos"][1] - self.pos[1]
+        norm = math.hypot(dx, dy)
+        mon["recoil_dir"] = [1.0, 0.0] if norm == 0 else [dx / norm, dy / norm]
+        mon["state"] = "recoil"
+        mon["state_ticks_left"] = int(mon["spec"].get("recoil_ticks", 60))
+        events.append(("monster_hit", {"monster_id": mon["id"], "hp": self.hp, "lost": lost, "pos": list(self.pos)}))
+        if self.hp <= 0:
+            self._faint(events, cause="monster")
