@@ -125,7 +125,43 @@ class LiveGame:
             snap["error"] = self.error
             return json.dumps(snap, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
+    def drop_item(self, index: int) -> bool:
+        """Bo mot mon trong gio (live-only, khong anh huong headless). index<0 = cuoi gio."""
+        with self._lock:
+            sim = self.session.sim
+            if getattr(sim, "mode", None) == "day":
+                sim = getattr(sim, "gather", None) if getattr(sim, "phase", None) == "gather" else None
+            if sim is None or not hasattr(sim, "hold") or not sim.hold:
+                return False
+            i = int(index)
+            if i < 0:
+                i = len(sim.hold) + i
+            if 0 <= i < len(sim.hold):
+                sim.hold.pop(i)
+                return True
+            return False
+
+    def close_shift(self) -> bool:
+        """Dong cua som: dua dong ho ca quan ve 0 de tick sau ket toan."""
+        with self._lock:
+            sim = self.session.sim
+            if getattr(sim, "mode", None) == "day":
+                if getattr(sim, "phase", None) == "quan" and getattr(sim, "quan", None) is not None:
+                    sim.quan.time_left_ticks = 0
+                    return True
+                return False
+            if self.mode == "quan" and not sim.done:
+                sim.time_left_ticks = 0
+                return True
+            return False
+
     def set_input(self, body: dict):
+        if isinstance(body.get("drop"), int) and not isinstance(body.get("drop"), bool):
+            self.drop_item(body["drop"])
+            return
+        if body.get("close_shift") is True:
+            self.close_shift()
+            return
         move = body.get("move")
         if move is not None:
             ok = (isinstance(move, list) and len(move) == 2 and
