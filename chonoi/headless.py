@@ -14,6 +14,18 @@ from .inventory import read_inventory
 from .runner import run
 from .scenario import load_scenario
 
+def _utf8_stdio():
+    """Console Windows hay la cp1252/437: ep UTF-8 de khong chet khi in tieng Viet."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_utf8_stdio()
+
+
 
 class _Parser(argparse.ArgumentParser):
     def error(self, message):
