@@ -1,56 +1,53 @@
-# Day 12 — AI SDLC: Quán Ăn Chợ Nổi
+# Day 12 — AI SDLC: Quán Ăn Chợ Nổi (Nhom145)
 
-> **Làm theo nhóm 4–6 người** · Dùng AI để xây game 2D qua **4 phase** trong **3 giờ**: Út Sen lặn bắt cá, hái rau trên mặt nước rồi tối mở quán phục vụ khách.
-> **Yêu cầu từng phase mở đúng mốc giờ tại lab board:** **[Chợ Nổi Lab](https://claude.ai/artifact/E35v787wSx2wDgPTNhMVDg)** (cần đăng nhập claude.ai; có trợ giảng AI cho từng phase).
+> **Nhóm 2 người (đã được chấp thuận trong `docs/clarify.md`)** · Dùng AI để xây game 2D qua **4 phase** trong **3 giờ**: Út Sen lặn bắt cá, hái rau trên mặt nước rồi tối mở quán phục vụ khách trên nhà bè Má Tư.
+> **Yêu cầu từng phase mở đúng mốc giờ tại lab board:** **[Chợ Nổi Lab](https://claude.ai/artifact/E35v787wSx2wDgPTNhMVDg)**.
 
-## Bắt buộc (chỉ có thế)
-
-Cách làm việc kỹ thuật là **tự do** (push thẳng, nhánh + PR, pair, có hay không CI…). Cái bắt buộc:
-
-1. **Một repo chung:** trưởng nhóm **fork** repo này, đặt tên `K5-L3B-LAB-Day12-AI-SDLC-<ten-nhom>`, thêm mọi thành viên làm collaborator (*Settings → Collaborators*, quyền Write) và để repo **public** (giảng viên xem được, không cần mời).
-2. **Cả nhóm cùng commit** bằng tài khoản GitHub của mình, mỗi người **≥ 3 commit có nội dung** (làm cặp thì ghi `Co-authored-by:`).
-3. **Điền [`TEAM.md`](TEAM.md):** danh sách thành viên + thỏa thuận làm việc nhóm; sửa `team_size` trong [`game.contract.json`](game.contract.json). Commit của người không có trong `TEAM.md` không được tính.
-4. **Gắn tag** `phase-1` … `phase-4` đúng hạn; chạy được tại từng tag.
-5. **Ghi chép tối thiểu:** `docs/verification/phase-n.md`, `docs/clarify.md`, `docs/ai-usage-log.md`, `docs/retro.md`, `docs/members/<handle>.md`.
-
-## Bắt đầu nhanh
+## Bắt đầu nhanh (Tối đa 3 lệnh từ clone sạch)
 
 ```bash
-git clone <fork-của-nhóm> && cd <fork-của-nhóm>
-PYTHONPATH=tests:. python3 -m unittest discover -s tests -v        # smoke test
-python3 -m chonoi.live --mode gather                                # chơi thử trên trình duyệt (tùy chọn)
+git clone https://github.com/HieuVuong145/K5-L3B-LAB-Day12-AI-SDLC-Nhom145.git && cd K5-L3B-LAB-Day12-AI-SDLC-Nhom145
+PYTHONPATH=tests:. python3 -m unittest discover -s tests -v
+python3 -m chonoi.live --mode gather
 ```
 
-Game cần chế độ **headless** theo Test Contract (`python3 -m chonoi.headless --mode gather|quan …`) để được chạy và chấm tự động. **Công nghệ không ràng buộc**: khung Python trong `chonoi/` chỉ là gợi ý, chi tiết ở [`docs/STARTER.md`](docs/STARTER.md).
+## Cách chơi & Phím điều khiển
 
-## Tự do sáng tạo
+Mở trình duyệt tại địa chỉ in ra (mặc định `http://127.0.0.1:8000/`):
+- **Buổi sáng (`gather`):** `python3 -m chonoi.live --mode gather [--inventory-out kho.json]`
+  - `WASD` hoặc `phím mũi tên`: Bơi (nhìn ngang, độ sâu $d$ tăng khi bơi xuống).
+  - `E`: Cập bến (khi ở mạn thuyền bên trái) hoặc Hái nút cây trên mặt nước ($d \le 0.5\,\text{m}$).
+  - `Space`: Bắt đàn cá khi lặn dưới nước ($d > 0.5\,\text{m}$).
+  - `R`: Chơi lại từ đầu.
+- **Buổi tối (`quan`):** `python3 -m chonoi.live --mode quan --inventory docs/contracts/inventory.sample.json`
+  - `WASD`: Đi lại trong quán (nhìn từ trên xuống).
+  - `E`: Tương tác với Bếp B1 (nấu món, nhấc món chín lên tay) hoặc Bàn T1 (phục vụ khách).
+  - `R`: Chơi lại từ đầu.
 
-Ngoài phần đề yêu cầu, nhóm được **thêm** nhân vật, loài cá/cây, sinh vật, món, bản đồ, cơ chế, câu chuyện, đồ họa, âm nhạc… với ba điều kiện: **không phá phần cố định** (tắt ở headless), ghi mục **"Sáng tạo của nhóm"** trong README của nhóm, và **làm lõi đúng trước**.
+## Cách tính điểm (Scoring)
 
-## Lịch 3 giờ
+Điểm số được tính toán tự động ở mọi snapshot và dòng end theo công thức chuẩn của Test Contract:
+$$\text{Score} = \text{Earned} + 100 \times \lfloor \text{Reputation} \rfloor$$
+- `Earned`: Tổng tiền thu được từ bán món và tiền boa của khách trong lượt.
+- `Reputation`: Điểm uy tín của quán (khởi đầu 3.0, tối đa 5.0, tối thiểu 0.0; phục vụ nhanh được cộng boa và tăng uy tín, để khách hết kiên nhẫn bỏ đi bị trừ 0.5 uy tín).
 
-| Mốc | Phase | Hạn tag |
-|---|---|---|
-| 0:00 | Phase 1 (PRD-0) | `phase-1` trước 1:00 |
-| 1:00 | Phase 2 | `phase-2` trước 1:55 |
-| 1:55 | Phase 3 | `phase-3` trước 2:30 |
-| 2:30 | Phase 4 | `phase-4` + Release `v1.0.0` trước 3:00 |
+## Kiểm thử tự động (1 lệnh duy nhất)
 
-Hết giờ mỗi phase thì gắn tag rồi đi tiếp; chỗ chưa xong ghi trung thực trong bằng chứng.
+```bash
+PYTHONPATH=tests:. python3 -m unittest discover -s tests -v
+```
+Toàn bộ 47 unit tests bao phủ Test Contract, kiểm tra danh sách thành viên, chuyển động, lặn/hái và phục vụ quán đều đạt màu xanh (PASS).
 
-## Đánh giá (100 điểm)
+## Bắt buộc & Bàn giao Phase
 
-| Hạng mục | Điểm |
-|---|---|
-| Test tự động ẩn (headless, gồm kiểm tra lại phase trước) | 25 |
-| Làm việc nhóm (một repo chung, chia việc, tích hợp, đổi yêu cầu) | 25 |
-| Kiểm chứng & bằng chứng | 15 |
-| Harness AI (AGENTS.md, skill, nhật ký dùng AI) | 10 |
-| Đánh giá & retro | 10 |
-| Chất lượng sản phẩm (đúng yêu cầu, mở rộng/sáng tạo) | 10 |
-| Demo | 5 |
+1. **Repo chung:** Repo fork public tại [HieuVuong145/K5-L3B-LAB-Day12-AI-SDLC-Nhom145](https://github.com/HieuVuong145/K5-L3B-LAB-Day12-AI-SDLC-Nhom145).
+2. **Cam kết đóng góp:** Cả 2 thành viên đều commit bằng tài khoản GitHub thật của mình (`HieuVuong145` và `ngdinhtruong28`).
+3. **Danh sách thành viên:** Đã điền đầy đủ và kiểm tra khớp trong [`TEAM.md`](TEAM.md) và [`game.contract.json`](game.contract.json).
+4. **Gắn tag phase:** `phase-1` gắn tại commit hoàn thành Phase 1 trước 1:00.
+5. **Ghi chép tối thiểu:** [`docs/verification/phase-1.md`](docs/verification/phase-1.md), [`docs/plan/phase-1.md`](docs/plan/phase-1.md), [`docs/clarify.md`](docs/clarify.md), [`docs/ai-usage-log.md`](docs/ai-usage-log.md), [`docs/standup.md`](docs/standup.md), [`docs/members/HieuVuong145.md`](docs/members/HieuVuong145.md), [`docs/members/ngdinhtruong28.md`](docs/members/ngdinhtruong28.md).
 
-## Quy định
+## Sáng tạo của nhóm (Phase 1)
 
-- Dùng AI thoải mái; **không sao chép repo của nhóm khác**; bằng chứng phải thật.
-- Nhân vật, bối cảnh là bản gốc của lab; asset ngoài chỉ dùng CC0/CC-BY/MIT hoặc tự tạo, ghi nguồn trong `CREDITS.md`. Không commit API key, token, `.env`.
+Ở Phase 1, nhóm tập trung ưu tiên tối đa vào **sự chuẩn xác và độ ổn định của luật lõi** (làm lõi đúng trước, sáng tạo sau theo mục 1 của PRD-0):
+- Xây dựng thêm bộ 15 unit tests chuyên biệt trong `tests/test_gather.py` và `tests/test_quan.py` bao phủ triệt để các góc cạnh của luồng gameplay (như giải hòa ID theo `id_key`, kiểm soát LIFO của giỏ khi ngất, tính boa theo tỷ lệ kiên nhẫn còn lại, và dọn ca khi hết giờ).
+- Đảm bảo tính tất định 100% qua Streams RNG và hoàn thành tích hợp hai tiến trình headless đúng chuẩn.
