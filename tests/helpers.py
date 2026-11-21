@@ -28,7 +28,8 @@ def headless_cmd():
 
 def run_headless(*args, cwd=ROOT):
     """Chạy `<headless_cmd> <args>`; trả (mã thoát, stderr)."""
-    p = subprocess.run([*headless_cmd(), *args], cwd=cwd, capture_output=True, text=True)
+    p = subprocess.run([*headless_cmd(), *args], cwd=cwd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     return p.returncode, p.stderr
 
 
