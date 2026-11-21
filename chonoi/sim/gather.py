@@ -6,13 +6,17 @@ Mặt cắt dòng sông nhìn NGANG: vị trí `[x, d]` (x sang phải, `d` đ�
 Đã làm sẵn để smoke test chạy được: bơi + tăng/giảm tốc, chặn mép (d không âm), đồng hồ và hết giờ,
 cập bến (`interact` trong vùng bến -> `gather_end` reason `docked`), xuất kho, snapshot đầy đủ trường gather.
 
-Nhóm viết tiếp (đúng thứ tự một bước trong PRD mục 13.8, "Gather"):
-  TODO(nhóm, lát 1): bơi + oxy + biên + giỏ
-      - oxy: dưới nước (d > surface_depth) trừ 1 tick/tick, mặt nước hồi oxygen_refill_per_tick, kẹp [0, max]
-      - ngạt: oxy = 0 và đang dưới nước -> đếm zero_oxy_ticks, đủ choke_interval_ticks thì -1 Máu (choke)
-      - Máu về 0 -> ngất (faint, gather_end reason `fainted`, mất toàn bộ giỏ, kho rỗng)
-      - sự kiện dive / surface / oxygen_empty / choke / faint
-      - giỏ: thứ tự nhặt (LIFO), sức chứa hold_capacity
+Đã làm (lát 1, theo đúng thứ tự một bước trong PRD mục 13.8, "Gather"):
+  bơi + oxy + biên + giỏ
+      - oxy theo d CUỐI bước: dưới nước (d > surface_depth) trừ 1 tick/tick, mặt nước hồi
+        oxygen_refill_per_tick, kẹp [0, oxygen_max_s * 60]
+      - đổi vùng đầu/cuối bước -> `dive` / `surface`, data {"pos": [x, d]}
+      - oxy từ dương xuống 0 -> `oxygen_empty`, data {"pos": [x, d]} (chỉ một lần)
+      - ngạt: oxy = 0 và đang dưới nước -> đếm zero_oxy_ticks, đủ choke_interval_ticks thì -1 Máu
+        (`choke`, data {"hp": hp}); lên mặt nước thì zero_oxy_ticks về 0
+      - Máu về 0 -> `faint` + gather_end reason `fainted`, mất toàn bộ giỏ (kho rỗng)
+      - giỏ: thứ tự nhặt LIFO (mới nhất ở cuối), sức chứa hold_capacity (_add_to_hold/_hold_full)
+Nhóm viết tiếp:
   TODO(nhóm, lát 2): hái + bắt cá + cập bến + kho
       - hái nút ở mặt nước (gather, hold_full), nút mọc lại (node_regrown đã có phần đếm ngược)
       - bắt đàn cá bằng `catch` (fish_caught, hold_full, hồi chiêu catch_cd_ticks, chỉ khi dưới nước)
@@ -107,22 +111,45 @@ class GatherSim:
                 n["regrow_ticks"] -= 1
                 if n["regrow_ticks"] == 0:
                     events.append(("node_regrown", {"node_id": n["id"]}))
-        # 2. bơi + chặn mép
+        # 2. bơi + chặn mép (chặn mép đã làm trong _move)
+        was_surface = self._at_surface()
         self._move(inp)
-        # TODO(nhóm, lát 1): so phân vùng đầu/cuối bước -> dive / surface (data: pos).
-        # TODO(nhóm, lát 1): oxy theo d CUỐI bước (mặt nước hồi, dưới nước trừ), oxygen_empty khi từ dương
-        #   xuống 0, đếm ngạt, choke (-1 Máu). Máu 0 -> faint + gather_end("fainted") với giỏ rỗng, return.
-        # 3. interact: bến trước, rồi hái
+        at_surface = self._at_surface()
+        # 3. đổi vùng đầu/cuối bước -> dive / surface (data: pos)
+        if was_surface and not at_surface:
+            events.append(("dive", {"pos": list(self.pos)}))
+        elif at_surface and not was_surface:
+            events.append(("surface", {"pos": list(self.pos)}))
+        # 4. oxy theo d CUỐI bước, rồi ngạt -> choke -> ngất
+        if at_surface:
+            self.oxygen_ticks = min(self.oxygen_max,
+                                    self.oxygen_ticks + int(self.t["oxygen_refill_per_tick"]))
+            self.zero_oxy_ticks = 0
+        else:
+            if self.oxygen_ticks > 0:
+                self.oxygen_ticks -= 1
+                if self.oxygen_ticks == 0:
+                    events.append(("oxygen_empty", {"pos": list(self.pos)}))
+            if self.oxygen_ticks == 0:
+                self.zero_oxy_ticks += 1
+                if self.zero_oxy_ticks >= int(self.t["choke_interval_ticks"]):
+                    self.zero_oxy_ticks = 0
+                    self.hp -= 1
+                    events.append(("choke", {"hp": self.hp}))
+                    if self.hp <= 0:
+                        self._faint(events)
+                        return events
+        # 5. interact: bến trước, rồi hái
         if inp.pressed("interact"):
             if self._in_dock():
                 self._finish("docked", events)
                 return events
             # TODO(nhóm, lát 2): chỉ khi ở mặt nước: hái nút `ready` gần nhất trong interact_radius
             #   (id nhỏ khi bằng nhau): gather / hold_full; đặt regrow_ticks cho nút.
-        # 4. bắt cá
+        # 6. bắt cá
         if inp.pressed("catch"):
             pass  # TODO(nhóm, lát 2): chỉ khi catch_cd_ticks == 0 và dưới nước: fish_caught / hold_full.
-        # 5. hết giờ
+        # 7. hết giờ
         if self.time_left_ticks <= 0:
             self._finish("time", events)
         return events
@@ -133,6 +160,23 @@ class GatherSim:
 
     def _in_dock(self) -> bool:
         return math.dist(self.pos, self.t["dock_pos"]) <= self.t["dock_radius"]
+
+    def _hold_full(self) -> bool:
+        return len(self.hold) >= int(self.t["hold_capacity"])
+
+    def _add_to_hold(self, item_id: str) -> bool:
+        """Nhặt vào giỏ kiểu LIFO: món mới nhất nằm cuối; giỏ đầy thì không thêm (trả False)."""
+        if self._hold_full():
+            return False
+        self.hold.append(item_id)
+        return True
+
+    def _faint(self, events):
+        """Ngất vì hết Máu: mất toàn bộ giỏ, kết thúc lượt với reason `fainted` (kho rỗng)."""
+        self.hp = 0
+        self.hold = []
+        events.append(("faint", {"pos": list(self.pos)}))
+        self._finish("fainted", events)
 
     def _finish(self, reason, events):
         self.done = True
