@@ -21,7 +21,23 @@ test_gather_node_hold_full (test_gather.GatherTest.test_gather_node_hold_full) .
 test_gather_node_success (test_gather.GatherTest.test_gather_node_success) ... ok
 test_gather_node_underwater_fails (test_gather.GatherTest.test_gather_node_underwater_fails) ... ok
 test_oxygen_consumption_and_choke (test_gather.GatherTest.test_oxygen_consumption_and_choke) ... ok
+test_choke_after_interval_costs_one_hp (test_gather_rules.Choke.test_choke_after_interval_costs_one_hp) ... ok
+test_faint_clears_hold_and_ends_with_reason_fainted (test_gather_rules.Choke.test_faint_clears_hold_and_ends_with_reason_fainted) ... ok
+test_surfacing_resets_choke_counter (test_gather_rules.Choke.test_surfacing_resets_choke_counter) ... ok
+test_add_to_hold_is_lifo_and_respects_capacity (test_gather_rules.Hold.test_add_to_hold_is_lifo_and_respects_capacity) ... ok
+test_oxygen_drains_one_tick_per_tick_underwater (test_gather_rules.Oxygen.test_oxygen_drains_one_tick_per_tick_underwater) ... ok
+test_oxygen_empty_event_fires_once (test_gather_rules.Oxygen.test_oxygen_empty_event_fires_once) ... ok
+test_oxygen_refills_at_surface_and_stops_at_max (test_gather_rules.Oxygen.test_oxygen_refills_at_surface_and_stops_at_max) ... ok
+test_dive_and_surface_events_carry_pos (test_gather_rules.Zones.test_dive_and_surface_events_carry_pos) ... ok
+test_no_zone_event_while_staying_underwater (test_gather_rules.Zones.test_no_zone_event_while_staying_underwater) ... ok
 test_state_input_and_clean_stop (test_live.LiveServerTest.test_state_input_and_clean_stop) ... ok
+test_one_day_reaches_shop_and_completes (test_phase2.Day.test_one_day_reaches_shop_and_completes) ... ok
+test_pause_freezes_phase_and_resumes (test_phase2.Day.test_pause_freezes_phase_and_resumes) ... ok
+test_fish_swim_and_age (test_phase2.Fish.test_fish_swim_and_age) ... ok
+test_spawn_at_360_with_clearance (test_phase2.Fish.test_spawn_at_360_with_clearance) ... ok
+test_hit_loses_half_hold_lifo_and_sets_invuln (test_phase2.Monster.test_hit_loses_half_hold_lifo_and_sets_invuln) ... ok
+test_buy_max_level (test_phase2.Shop.test_buy_max_level) ... ok
+test_buy_tiers_funds_and_close (test_phase2.Shop.test_buy_tiers_funds_and_close) ... ok
 test_bad_frames_raise (test_python_starter_units.Units.test_bad_frames_raise) ... ok
 test_catch_and_attack_are_v11_buttons_and_roll_is_not (test_python_starter_units.Units.test_catch_and_attack_are_v11_buttons_and_roll_is_not) ... ok
 test_id_allocator_continues_after_max (test_python_starter_units.Units.test_id_allocator_continues_after_max) ... ok
@@ -34,6 +50,20 @@ test_customer_arrives_and_reserves_stock (test_quan.QuanTest.test_customer_arriv
 test_customer_timeout_leaves_and_penalizes_reputation (test_quan.QuanTest.test_customer_timeout_leaves_and_penalizes_reputation) ... ok
 test_full_cooking_serving_and_payment_flow (test_quan.QuanTest.test_full_cooking_serving_and_payment_flow) ... ok
 test_no_dish_when_stock_empty (test_quan.QuanTest.test_no_dish_when_stock_empty) ... ok
+test_dish_choice_is_deterministic_per_seed (test_quan_customers.Arrival.test_dish_choice_is_deterministic_per_seed) ... ok
+test_first_customer_at_tick_120_reserves_recipe (test_quan_customers.Arrival.test_first_customer_at_tick_120_reserves_recipe) ... ok
+test_no_customer_before_the_first_tick (test_quan_customers.Arrival.test_no_customer_before_the_first_tick) ... ok
+test_random_customers_false_disables_spawning (test_quan_customers.Arrival.test_random_customers_false_disables_spawning) ... ok
+test_no_dish_when_stock_cannot_cover_any_recipe (test_quan_customers.NoDish.test_no_dish_when_stock_cannot_cover_any_recipe) ... ok
+test_occupied_table_skips_turn_without_event (test_quan_customers.NoDish.test_occupied_table_skips_turn_without_event) ... ok
+test_patience_clamped_at_zero_before_shift_end (test_quan_customers.Patience.test_patience_clamped_at_zero_before_shift_end) ... ok
+test_patience_decreases_from_the_step_after_arrival (test_quan_customers.Patience.test_patience_decreases_from_the_step_after_arrival) ... ok
+test_zero_patience_leaves_releases_ingredients_and_costs_reputation (test_quan_customers.Patience.test_zero_patience_leaves_releases_ingredients_and_costs_reputation) ... ok
+test_closing_pays_eater_even_at_final_tick (test_quan_service.Closing.test_closing_pays_eater_even_at_final_tick) ... ok
+test_closing_waiter_leaves_without_reputation_penalty (test_quan_service.Closing.test_closing_waiter_leaves_without_reputation_penalty) ... ok
+test_cook_pick_serve_pay_with_tip (test_quan_service.Service.test_cook_pick_serve_pay_with_tip) ... ok
+test_interact_stove_before_table_when_both_in_range (test_quan_service.Service.test_interact_stove_before_table_when_both_in_range) ... ok
+test_no_tip_when_patience_low_at_serve (test_quan_service.Service.test_no_tip_when_patience_low_at_serve) ... ok
 test_con_01_ticks_zero_and_end_line (test_smoke_p1.Contract.test_con_01_ticks_zero_and_end_line) ... ok
 test_con_02_deterministic_bytes (test_smoke_p1.Contract.test_con_02_deterministic_bytes) ... ok
 test_con_03_bad_input_exit_2 (test_smoke_p1.Contract.test_con_03_bad_input_exit_2) ... ok
@@ -65,6 +95,6 @@ test_two_members_is_valid (test_team_check.TeamCheck.test_two_members_is_valid) 
 test_wrong_size_duplicate_and_outsider (test_team_check.TeamCheck.test_wrong_size_duplicate_and_outsider) ... ok
 
 ----------------------------------------------------------------------
-Ran 59 tests in 2.914s
+Ran 89 tests in 3.044s
 
 OK

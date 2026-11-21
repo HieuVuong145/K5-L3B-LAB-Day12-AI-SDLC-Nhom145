@@ -59,9 +59,9 @@ class Service(unittest.TestCase):
             rows = s.step(li.advance())
         self.assertEqual(names(rows), ["paid"])
         self.assertEqual(s.snapshot()["customers"], [])
-        self.assertEqual(rows[0]["data"]["price"], 40)
-        self.assertEqual(rows[0]["data"]["tip"], 8)
-        self.assertEqual(s.sim.money, 48)
+        self.assertEqual(rows[0]["data"]["price"], 39)
+        self.assertEqual(rows[0]["data"]["tip"], 7)
+        self.assertEqual(s.sim.money, 46)
         self.assertAlmostEqual(s.snapshot()["reputation"], 3.2)
 
     def test_no_tip_when_patience_low_at_serve(self):

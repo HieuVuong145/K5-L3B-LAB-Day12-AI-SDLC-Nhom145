@@ -13,6 +13,19 @@ from .ramp import ramp_velocity
 TICK = 60.0
 
 
+class StockList(list):
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return sum(1 for it in self if it.get("kind") == key)
+        return super().__getitem__(key)
+
+    def get(self, key, default=0):
+        if isinstance(key, str):
+            c = sum(1 for it in self if it.get("kind") == key)
+            return c if c > 0 else default
+        return default
+
+
 class QuanSim:
     mode = "quan"
     phase = "quan"
@@ -40,7 +53,7 @@ class QuanSim:
 
         # kho: --inventory HOẶC scenario.stock
         raw_stock = inventory if inventory is not None else scenario.get("stock", [])
-        self.stock = []
+        self.stock = StockList()
         if isinstance(raw_stock, dict):
             for k, count in raw_stock.items():
                 for _ in range(int(count)):
@@ -101,7 +114,20 @@ class QuanSim:
                     res_ids.extend([it["id"] for it in avail[:n]])
                 cust["reserved"] = res_ids
             elif res is None:
-                cust["reserved"] = []
+                if dish in self.menu:
+                    recipe = self.menu[dish].get("recipe", {})
+                    res_ids = []
+                    for k, n in recipe.items():
+                        avail = [it for it in self.stock if it["kind"] == k and it["id"] not in res_ids]
+                        res_ids.extend([it["id"] for it in avail[:n]])
+                    if len(res_ids) == sum(recipe.values()):
+                        cust["reserved"] = res_ids
+                        cust["order_status"] = "reserved"
+                    else:
+                        cust["reserved"] = []
+                        cust["order_status"] = "unfulfillable"
+                else:
+                    cust["reserved"] = []
             else:
                 cust["reserved"] = list(res)
             for iid in cust["reserved"]:
@@ -125,6 +151,18 @@ class QuanSim:
         self.shift_earned = 0
         self.done = False
         self.reason = None
+
+    @property
+    def reserved(self):
+        res_ids = set()
+        for c in self.customers:
+            if c.get("state") == "waiting" and c.get("order_status") == "reserved":
+                res_ids.update(c.get("reserved") or [])
+        counts = {}
+        for it in self.stock:
+            if it["id"] in res_ids:
+                counts[it["kind"]] = counts.get(it["kind"], 0) + 1
+        return counts
 
     @staticmethod
     def _merge(defaults, updates):
@@ -324,7 +362,7 @@ class QuanSim:
         # Tiêu đúng các id đang giữ từ stock
         res_set = set(order.get("reserved") or [])
         used_items = [it for it in self.stock if it["id"] in res_set]
-        self.stock = [it for it in self.stock if it["id"] not in res_set]
+        self.stock = StockList(it for it in self.stock if it["id"] not in res_set)
 
         used_items_sorted = sorted(used_items, key=lambda it: (it["kind"], id_key(it["id"])))
 

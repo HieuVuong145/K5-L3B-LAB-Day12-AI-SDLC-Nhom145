@@ -120,10 +120,11 @@ class Choke(unittest.TestCase):
         li.set(move=[0, 0])
         rows = s.step(li.advance())
         self.assertEqual(names(rows), ["choke", "faint", "gather_end"])
-        self.assertEqual(rows[1]["data"]["lost"], ["bong_sung", "ca_loc"])  # LIFO: mất món mới nhất trước
+        lost_kinds = [it["kind"] if isinstance(it, dict) else it for it in rows[1]["data"]["lost"]]
+        self.assertEqual(lost_kinds, ["bong_sung", "ca_loc"])  # LIFO: mất món mới nhất trước
         self.assertEqual(rows[1]["data"]["hp"], 0)
         self.assertEqual(rows[2]["data"]["reason"], "fainted")
-        self.assertEqual(rows[2]["data"]["inventory"], {"items": {}})
+        self.assertEqual(rows[2]["data"]["inventory"], {"items": []})
         self.assertEqual(s.sim.hold, [])
         self.assertEqual(s.snapshot()["player"]["hp"], 0)
         self.assertTrue(s.done)

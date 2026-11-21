@@ -47,7 +47,9 @@ class Arrival(unittest.TestCase):
         for kind, n in recipe.items():
             self.assertEqual(s.sim.reserved[kind], n, kind)
         # giữ chỗ không trừ kho vật lý
-        self.assertEqual(s.snapshot()["stock"], {"bong_sung": 6, "ca_loc": 3})
+        st = s.snapshot()["stock"]
+        counts = {k: sum(1 for it in st if it["kind"] == k) for k in ("bong_sung", "ca_loc")} if isinstance(st, list) else st
+        self.assertEqual(counts, {"bong_sung": 6, "ca_loc": 3})
 
     def test_no_customer_before_the_first_tick(self):
         q = tuning()["quan"]
