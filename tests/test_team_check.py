@@ -38,8 +38,12 @@ class TeamCheck(unittest.TestCase):
         self.assertEqual(check_team.validate(m, 4, actor="dependabot[bot]", event="pull_request"), [])
 
     def test_too_few_members(self):
-        three = "\n".join(GOOD.splitlines()[:-1]) + "\n"
-        self.assertTrue(any("4 đến 6" in e for e in check_team.validate(check_team.parse_team(three), 3)))
+        one = "\n".join(GOOD.splitlines()[:4]) + "\n"
+        self.assertTrue(any("2 đến 6" in e for e in check_team.validate(check_team.parse_team(one), 1)))
+
+    def test_two_members_is_valid(self):
+        two = "\n".join(GOOD.splitlines()[:5]) + "\n"
+        self.assertEqual(check_team.validate(check_team.parse_team(two), 2), [])
 
 
 if __name__ == "__main__":
