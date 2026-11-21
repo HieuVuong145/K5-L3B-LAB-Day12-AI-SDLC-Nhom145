@@ -26,7 +26,7 @@ Các tính năng của phase sau chưa nằm trong khung này.
 
 import math
 
-from ..ids import sort_by_id
+from ..ids import id_key, sort_by_id
 from ..inventory import hold_to_items
 from .ramp import ramp_velocity
 
@@ -129,7 +129,7 @@ class GatherSim:
             if self.oxygen_ticks > 0:
                 self.oxygen_ticks -= 1
                 if self.oxygen_ticks == 0:
-                    events.append(("oxygen_empty", {"pos": list(self.pos)}))
+                    events.append(("oxygen_empty", {"oxygen_ticks": 0}))
             if self.oxygen_ticks == 0:
                 self.zero_oxy_ticks += 1
                 if self.zero_oxy_ticks >= int(self.t["choke_interval_ticks"]):
@@ -144,11 +144,66 @@ class GatherSim:
             if self._in_dock():
                 self._finish("docked", events)
                 return events
-            # TODO(nhóm, lát 2): chỉ khi ở mặt nước: hái nút `ready` gần nhất trong interact_radius
-            #   (id nhỏ khi bằng nhau): gather / hold_full; đặt regrow_ticks cho nút.
+            if self._at_surface():
+                candidates = []
+                radius = float(self.t["interact_radius"])
+                for n in self.nodes:
+                    if n["regrow_ticks"] == 0:
+                        dist = math.dist(self.pos, n["pos"])
+                        if dist <= radius:
+                            candidates.append((dist, n))
+                if candidates:
+                    candidates.sort(key=lambda item: (item[0], id_key(item[1]["id"])))
+                    _, target_node = candidates[0]
+                    capacity = int(self.t["hold_capacity"])
+                    free_space = capacity - len(self.hold)
+                    yield_amt = int(self.t.get("node_yield", 1))
+                    if free_space >= yield_amt:
+                        self.hold.extend([target_node["kind"]] * yield_amt)
+                        target_node["regrow_ticks"] = int(round(self.t["regrow_s"] * TICK))
+                        events.append(("gather", {
+                            "node_id": target_node["id"],
+                            "kind": target_node["kind"],
+                            "amount": yield_amt,
+                        }))
+                    else:
+                        events.append(("hold_full", {
+                            "action": "gather",
+                            "node_id": target_node["id"],
+                            "required": yield_amt,
+                            "free": free_space,
+                        }))
         # 6. bắt cá
         if inp.pressed("catch"):
-            pass  # TODO(nhóm, lát 2): chỉ khi catch_cd_ticks == 0 và dưới nước: fish_caught / hold_full.
+            if self.catch_cd_ticks == 0 and not self._at_surface():
+                candidates = []
+                radius = float(self.t["catch_radius"])
+                for f in self.fish:
+                    dist = math.dist(self.pos, f["pos"])
+                    if dist <= radius:
+                        candidates.append((dist, f))
+                if candidates:
+                    candidates.sort(key=lambda item: (item[0], id_key(item[1]["id"])))
+                    _, target_fish = candidates[0]
+                    yield_amt = int(self.t["fish_yield"][target_fish["kind"]])
+                    capacity = int(self.t["hold_capacity"])
+                    free_space = capacity - len(self.hold)
+                    if free_space >= yield_amt:
+                        self.hold.extend([target_fish["kind"]] * yield_amt)
+                        self.fish.remove(target_fish)
+                        self.catch_cd_ticks = int(round(self.t["catch_cooldown_s"] * TICK))
+                        events.append(("fish_caught", {
+                            "fish_id": target_fish["id"],
+                            "kind": target_fish["kind"],
+                            "yield": yield_amt,
+                        }))
+                    else:
+                        events.append(("hold_full", {
+                            "action": "catch",
+                            "fish_id": target_fish["id"],
+                            "required": yield_amt,
+                            "free": free_space,
+                        }))
         # 7. hết giờ
         if self.time_left_ticks <= 0:
             self._finish("time", events)
@@ -173,9 +228,10 @@ class GatherSim:
 
     def _faint(self, events):
         """Ngất vì hết Máu: mất toàn bộ giỏ, kết thúc lượt với reason `fainted` (kho rỗng)."""
+        lost = list(reversed(self.hold))
         self.hp = 0
         self.hold = []
-        events.append(("faint", {"pos": list(self.pos)}))
+        events.append(("faint", {"cause": "choke", "lost": lost, "hp": 0}))
         self._finish("fainted", events)
 
     def _finish(self, reason, events):
