@@ -10,9 +10,9 @@ import json
 from .errors import BadInput
 from .inventory import KINDS_P1, validate_items
 
-GATHER_KEYS = {"player", "hold", "nodes", "fish", "random_fish", "time_left_ticks"}
+GATHER_KEYS = {"player", "hold", "nodes", "fish", "random_fish", "time_left_ticks", "monsters", "ca_ho", "random_ho"}
 GATHER_PLAYER_KEYS = {"pos", "vel", "heading_deg", "hp", "oxygen_ticks", "zero_oxy_ticks",
-                      "invuln_ticks", "catch_cd_ticks"}
+                      "invuln_ticks", "catch_cd_ticks", "attack_cd_ticks"}
 NODE_KINDS = ("bong_dien_dien", "bong_sung")
 FISH_KINDS = ("ca_linh", "ca_loc")
 QUAN_PLAYER_KEYS = {"pos", "vel"}
@@ -32,6 +32,40 @@ def _check_ids(name, arr):
         seen.add(e["id"])
 
 
+DAY_KEYS = {"money", "earned", "reputation", "upgrades", "day_plan"}
+
+
+def _validate_day(data, tuning):
+    day = data.get("day", {})
+    if not isinstance(day, dict) or set(day) - DAY_KEYS:
+        raise BadInput("day chỉ nhận money, earned, reputation, upgrades, day_plan")
+    money, earned = day.get("money", 0), day.get("earned", 0)
+    for name, v in (("money", money), ("earned", earned)):
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            raise BadInput(f"day.{name} phải là số nguyên >= 0")
+    if money > earned:
+        raise BadInput("day.money phải <= day.earned")
+    rep = day.get("reputation", tuning["quan"]["reputation_initial"])
+    if not isinstance(rep, (int, float)) or isinstance(rep, bool):
+        raise BadInput("day.reputation phải là số")
+    up = day.get("upgrades", {})
+    if not isinstance(up, dict) or not all(isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool) and v >= 0 for k, v in up.items()):
+        raise BadInput("day.upgrades phải là map tên -> cấp >= 0")
+    plan = day.get("day_plan")
+    if plan is not None:
+        if not isinstance(plan, list) or not plan:
+            raise BadInput("day.day_plan phải là mảng")
+        for item in plan:
+            if not isinstance(item, dict) or "day" not in item or not isinstance(item.get("dishes"), dict) or not item["dishes"]:
+                raise BadInput("day.day_plan: mỗi mục cần day và dishes")
+    for blk in ("gather", "quan"):
+        if blk in data and not isinstance(data[blk], dict):
+            raise BadInput(f"khối {blk} phải là object")
+    if "quan" in data and ("stock" in data["quan"] or "reputation" in data["quan"]):
+        raise BadInput("chạy day không nhận quan.stock / quan.reputation")
+    return data
+
+
 def load_scenario(path, mode: str, tuning: dict) -> dict:
     if path is None:
         return {}
@@ -40,8 +74,10 @@ def load_scenario(path, mode: str, tuning: dict) -> dict:
             data = json.load(f)
     except (OSError, ValueError) as e:
         raise BadInput(f"không đọc được scenario {path}: {e}")
-    if not isinstance(data, dict) or not set(data) <= {"gather", "quan"}:
-        raise BadInput("scenario chỉ được có khối 'gather' hoặc 'quan'")
+    if not isinstance(data, dict) or not set(data) <= {"gather", "quan", "day"}:
+        raise BadInput("scenario chỉ được có khối 'gather', 'quan' hoặc 'day'")
+    if mode == "day":
+        return _validate_day(data, tuning)
     if set(data) - {mode}:
         raise BadInput(f"khối sai mode: chạy --mode {mode} chỉ nhận khối '{mode}'")
     block = data.get(mode, {})
