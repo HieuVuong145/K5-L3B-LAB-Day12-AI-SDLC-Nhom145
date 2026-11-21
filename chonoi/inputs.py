@@ -106,17 +106,22 @@ class LiveInputs:
         self._move = (0.0, 0.0)
         self._held = {b: False for b in buttons}
         self._pending = set()
+        self._buy = None
 
-    def set(self, move=None, **buttons):
+    def set(self, move=None, buy=None, **buttons):
+        if buy is not None:
+            self._buy = buy
         if move is not None:
             self._move = normalize(move)
         for b, v in buttons.items():
             if b not in self._held:
                 continue
-            if v and not self._held[b]:
+            one_shot = b in ("pause", "shop_done")
+            if v and (one_shot or not self._held[b]):
                 self._pending.add(b)
-            self._held[b] = bool(v)
+            self._held[b] = False if one_shot else bool(v)
 
     def advance(self) -> InputState:
         edges, self._pending = self._pending, set()
-        return InputState(self._move, dict(self._held), edges, None)
+        buy, self._buy = self._buy, None
+        return InputState(self._move, dict(self._held), edges, buy)
