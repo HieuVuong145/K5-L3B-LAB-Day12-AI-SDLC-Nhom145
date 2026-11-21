@@ -15,6 +15,7 @@ Ngẫu nhiên vẫn đi qua `Streams` (seed); chỉ nhịp chạy theo đồng h
 import argparse
 import json
 import os
+import socket
 import sys
 import threading
 import time
@@ -65,6 +66,7 @@ class LiveGame:
         self.events = []
         self._saved = False
         self.error = None
+        self._cached_state = None
 
     # --- luồng nền ----------------------------------------------------------------
     def start(self):
@@ -108,10 +110,13 @@ class LiveGame:
                     s.write_inventory_if_done(self.inventory_out)
                 except OSError as e:
                     sys.stderr.write(f"lỗi ghi kho: {e}\n")
+        self._cached_state = None
 
     # --- API cho handler -----------------------------------------------------------
     def state_json(self) -> bytes:
         with self._lock:
+            if self._cached_state is not None:
+                return self._cached_state
             snap = self.session.snapshot()
             if self.mode == "day":
                 phase = self.session.sim.phase
@@ -123,7 +128,8 @@ class LiveGame:
             snap["finished"] = self.session.done
             snap["reason"] = self.session.sim.reason if self.session.done else None
             snap["error"] = self.error
-            return json.dumps(snap, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            self._cached_state = json.dumps(snap, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            return self._cached_state
 
     def drop_item(self, index: int) -> bool:
         """Bo mot mon trong gio (live-only, khong anh huong headless). index<0 = cuoi gio."""
@@ -138,6 +144,7 @@ class LiveGame:
                 i = len(sim.hold) + i
             if 0 <= i < len(sim.hold):
                 sim.hold.pop(i)
+                self._cached_state = None
                 return True
             return False
 
@@ -148,10 +155,12 @@ class LiveGame:
             if getattr(sim, "mode", None) == "day":
                 if getattr(sim, "phase", None) == "quan" and getattr(sim, "quan", None) is not None:
                     sim.quan.time_left_ticks = 0
+                    self._cached_state = None
                     return True
                 return False
             if self.mode == "quan" and not sim.done:
                 sim.time_left_ticks = 0
+                self._cached_state = None
                 return True
             return False
 
@@ -240,14 +249,25 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(200, b'{"ok":true}')
 
 
+class _LiveHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def get_request(self):
+        sock, addr = super().get_request()
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
+        return sock, addr
+
+
 class LiveServer:
     """Máy chủ + mô phỏng. port=0 -> cổng ngẫu nhiên (đọc `.port`)."""
 
     def __init__(self, game: LiveGame, host="127.0.0.1", port=8000):
         handler = type("Handler", (_Handler,), {"game": game})
         self.game = game
-        self.httpd = ThreadingHTTPServer((host, port), handler)
-        self.httpd.daemon_threads = True
+        self.httpd = _LiveHTTPServer((host, port), handler)
         self.host = host
         self.port = self.httpd.server_address[1]
         self._thread = None

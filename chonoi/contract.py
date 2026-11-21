@@ -195,6 +195,32 @@ def _validate_shop(t):
                 raise BadInput(f"tuning.shop.upgrades.{name}[{i-1}].price phải là số nguyên dương")
 
 
+def _validate_freshness(t):
+    fr = t.get("freshness")
+    if fr is None:
+        return
+    if not isinstance(fr, dict):
+        raise BadInput("tuning.freshness phải là object")
+    if not (_num(fr.get("initial")) and fr["initial"] == 100):
+        raise BadInput("freshness.initial phải là 100")
+    if not (_num(fr.get("gather_decay_per_s")) and fr["gather_decay_per_s"] > 0):
+        raise BadInput("freshness.gather_decay_per_s phải > 0")
+    if not (_num(fr.get("quan_decay_per_s")) and fr["quan_decay_per_s"] > 0):
+        raise BadInput("freshness.quan_decay_per_s phải > 0")
+    if not (_num(fr.get("spoiled_below")) and 0 < fr["spoiled_below"] < 100):
+        raise BadInput("freshness.spoiled_below phải trong (0, 100)")
+
+
+def _validate_flood(t):
+    fl = t.get("flood")
+    if fl is None:
+        return
+    if not isinstance(fl, dict):
+        raise BadInput("tuning.flood phải là object")
+    if not isinstance(fl.get("active", False), bool):
+        raise BadInput("tuning.flood.active phải là bool")
+
+
 def validate_tuning(t):
     if not isinstance(t, dict):
         raise BadInput("thiếu khối tuning")
@@ -206,6 +232,8 @@ def validate_tuning(t):
     _validate_monsters(g)
     _validate_day_plan(t)
     _validate_shop(t)
+    _validate_freshness(t)
+    _validate_flood(t)
     # Quán: dải hợp lệ P1 (PRD mục 13.2)
     _between("quan.duration_s", q.get("duration_s"), 60, 600)
     _bounds("quan", q.get("bounds"), ("x", "z"))

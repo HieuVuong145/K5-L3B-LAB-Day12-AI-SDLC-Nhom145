@@ -25,7 +25,7 @@ let snap = null, offline = false;
 // ---------- vào: phím ----------
 const down = new Set();
 const MOVE_KEYS = { w: "u", arrowup: "u", s: "d", arrowdown: "d", a: "l", arrowleft: "l", d: "r", arrowright: "r" };
-let queue = [], inflight = false, lastSent = "";
+let pendingInput = null, inflight = false, lastSent = "";
 
 function currentInput() {
   const phase = snap ? (snap.phase || snap.mode) : "gather";
@@ -36,16 +36,17 @@ function currentInput() {
 }
 function pushInput() {
   const s = JSON.stringify(currentInput());
-  if (s === lastSent) return;
-  lastSent = s;
-  queue.push(s);
+  if (s === lastSent && !pendingInput) return;
+  pendingInput = s;
   flush();
 }
 async function flush() {
-  if (inflight) return;
+  if (inflight || !pendingInput) return;
   inflight = true;
-  while (queue.length) {
-    const body = queue.shift();
+  while (pendingInput) {
+    const body = pendingInput;
+    pendingInput = null;
+    lastSent = body;
     try { await fetch("/input", { method: "POST", body, headers: { "Content-Type": "application/json" } }); }
     catch (e) { /* mất kết nối: poll sẽ báo */ }
   }
@@ -68,7 +69,7 @@ addEventListener("keydown", (e) => {
   if (MOVE_KEYS[k]) { down.add(MOVE_KEYS[k]); e.preventDefault(); }
   else if (k === "e") down.add("interact");
   else if (k === " ") { down.add("catch"); e.preventDefault(); }
-  else if (k === "r") { fetch("/restart", { method: "POST" }); lastSent = ""; down.clear(); }
+  else if (k === "r") { fetch("/restart", { method: "POST" }); lastSent = ""; pendingInput = null; down.clear(); }
   else if (k === "escape" || k === "p") { sendOnce({ pause: true }); e.preventDefault(); }
   else if (k === "enter") { if (snap && snap.phase === "shop") sendOnce({ shop_done: true }); }
   else if (k === "x") { sendOnce({ drop: -1 }); }
@@ -89,10 +90,14 @@ addEventListener("blur", () => { down.clear(); pushInput(); });
 async function poll() {
   try {
     const r = await fetch("/state", { cache: "no-store" });
-    snap = await r.json();
-    offline = false;
+    if (r.ok) {
+      snap = await r.json();
+      offline = false;
+    } else {
+      offline = true;
+    }
   } catch (e) { offline = true; }
-  setTimeout(poll, 16);
+  setTimeout(poll, 8);
 }
 poll();
 
@@ -105,7 +110,7 @@ const DISH_NAME = { ca_loc_nuong_trui: "Ca loc nuong trui", goi_bong_sung: "Goi 
   ca_keo_nuong: "Ca keo nuong muoi ot", lau_mam: "Lau mam mien Tay" };
 
 function fit() {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = innerWidth, h = innerHeight;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -153,8 +158,14 @@ const smoothMem = new Map();
 function smoothPos(key, x, y, k) {
   const cur = smoothMem.get(key);
   if (!cur) { const v = [x, y]; smoothMem.set(key, v); return v; }
-  cur[0] = lerp(cur[0], x, k);
-  cur[1] = lerp(cur[1], y, k);
+  const dx = x - cur[0], dy = y - cur[1];
+  if (dx * dx + dy * dy < 0.0001) {
+    cur[0] = x;
+    cur[1] = y;
+    return cur;
+  }
+  cur[0] += dx * k;
+  cur[1] += dy * k;
   return cur;
 }
 function h01(i) {
@@ -172,14 +183,12 @@ function rr(x, y, w, h, r) {
   ctx.closePath();
 }
 function panel(x, y, w, h) {
-  ctx.save();
-  ctx.shadowColor = "rgba(3,10,16,.45)";
-  ctx.shadowBlur = 16;
-  ctx.shadowOffsetY = 5;
-  ctx.fillStyle = "rgba(10,26,36,.58)";
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  rr(x + 2, y + 3, w, h, 14);
+  ctx.fill();
+  ctx.fillStyle = "rgba(10,26,36,.82)";
   rr(x, y, w, h, 14);
   ctx.fill();
-  ctx.restore();
   ctx.strokeStyle = "rgba(170,225,240,.20)";
   ctx.lineWidth = 1;
   rr(x + .5, y + .5, w - 1, h - 1, 14);
@@ -266,11 +275,8 @@ function drawFishArt(f, px, py, s, t, i) {
   const wig = Math.sin(t * 6 + i * 1.7);
   ctx.save();
   ctx.translate(px, py);
-  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, L);
-  halo.addColorStop(0, "rgba(180,245,235,.16)");
-  halo.addColorStop(1, "rgba(180,245,235,0)");
-  ctx.fillStyle = halo;
-  ctx.beginPath(); ctx.arc(0, 0, L, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(180,245,235,.12)";
+  ctx.beginPath(); ctx.arc(0, 0, L * 0.9, 0, Math.PI * 2); ctx.fill();
   ctx.scale(dir, 1);
   ctx.rotate(wig * 0.05);
   ctx.fillStyle = "rgba(0,12,20,.2)";
@@ -506,15 +512,11 @@ function drawGather(w, h) {
   ctx.beginPath();
   ctx.rect(x0, ySurf, x1 - x0, yBot - ySurf);
   ctx.clip();
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 6; i++) {
     const bx = x0 + X * h01(i * 3 + 1) * s;
     const wd = s * (1.1 + h01(i * 5 + 2) * 2.6);
     const sway = Math.sin(t * 0.45 + i) * s * 2.4;
-    const rg = ctx.createLinearGradient(bx, ySurf, bx + sway, yBot);
-    rg.addColorStop(0, "rgba(255,236,200,.20)");
-    rg.addColorStop(0.5, "rgba(210,255,240,.10)");
-    rg.addColorStop(1, "rgba(210,255,240,0)");
-    ctx.fillStyle = rg;
+    ctx.fillStyle = "rgba(220,255,240,.06)";
     ctx.beginPath();
     ctx.moveTo(bx, ySurf);
     ctx.lineTo(bx + wd, ySurf);
@@ -533,20 +535,21 @@ function drawGather(w, h) {
     }
     ctx.stroke();
   }
-  for (let i = 0; i < 80; i++) {
+  ctx.fillStyle = "rgba(225,250,235,.14)";
+  ctx.beginPath();
+  for (let i = 0; i < 40; i++) {
     const mx = x0 + h01(i) * (x1 - x0);
     const my = ySurf + ((h01(i + 21) * (yBot - ySurf)) + t * s * (0.2 + h01(i + 5) * 0.45)) % (yBot - ySurf);
-    ctx.fillStyle = "rgba(225,250,235," + (0.07 + h01(i + 7) * 0.15) + ")";
-    ctx.beginPath();
+    ctx.moveTo(mx + Math.max(0.7, s * 0.055), my);
     ctx.arc(mx, my, Math.max(0.7, s * 0.055), 0, Math.PI * 2);
-    ctx.fill();
   }
+  ctx.fill();
   ctx.restore();
   // mặt nước gợn sóng
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(x0, ySurf + s * 0.5);
-  for (let x = 0; x <= X; x += 0.5) {
+  for (let x = 0; x <= X; x += 1.5) {
     ctx.lineTo(sx(x), ySurf + Math.sin(x * 0.8 + t * 1.5) * s * 0.12 + Math.sin(x * 2.4 - t * 2.2) * s * 0.05);
   }
   ctx.lineTo(x1, ySurf - s * 1.4);
@@ -560,7 +563,7 @@ function drawGather(w, h) {
   ctx.strokeStyle = "rgba(240,255,248,.8)";
   ctx.lineWidth = Math.max(1, s * 0.09);
   ctx.beginPath();
-  for (let x = 0; x <= X; x += 0.5) {
+  for (let x = 0; x <= X; x += 1.5) {
     const y = ySurf + Math.sin(x * 0.8 + t * 1.5) * s * 0.12 + Math.sin(x * 2.4 - t * 2.2) * s * 0.05;
     if (x === 0) ctx.moveTo(sx(x), y); else ctx.lineTo(sx(x), y);
   }
@@ -647,7 +650,7 @@ function drawGather(w, h) {
   });
   // đàn cá
   (snap.fish || []).forEach((f, i) => {
-    const pos = smoothPos("f" + f.id, f.pos[0], f.pos[1], 0.2);
+    const pos = smoothPos("f" + f.id, f.pos[0], f.pos[1], 0.4);
     const fx = sx(pos[0]);
     const fy = sy(pos[1]) + Math.sin(t * 1.6 + i * 1.3) * s * 0.1;
     drawFishArt(f, fx, fy, s, t, i);
@@ -658,7 +661,7 @@ function drawGather(w, h) {
   drawMonsters(snap, sx, sy, s, t);
   const p = snap.player;
   if (p) {
-    const pos = smoothPos("player", p.pos[0], p.pos[1], 0.35);
+    const pos = smoothPos("player", p.pos[0], p.pos[1], 0.7);
     const px = sx(pos[0]), py = sy(pos[1]);
     const underwater = p.at_surface === undefined ? p.pos[1] > 0.5 : !p.at_surface;
     if (meta.catch_radius && underwater) {
@@ -699,12 +702,9 @@ function drawGather(w, h) {
     const hidden = p.invuln_ticks > 0 && Math.floor(snap.tick / 5) % 2 === 1;
     if (!hidden) {
       const sp = Math.hypot((p.vel || [0, 0])[0], (p.vel || [0, 0])[1]);
-      const halo = ctx.createRadialGradient(px, py, 0, px, py, s * 1.8);
-      halo.addColorStop(0, "rgba(255,240,190,.26)");
-      halo.addColorStop(1, "rgba(255,240,190,0)");
-      ctx.fillStyle = halo;
+      ctx.fillStyle = "rgba(255,240,190,.18)";
       ctx.beginPath();
-      ctx.arc(px, py, s * 1.8, 0, Math.PI * 2);
+      ctx.arc(px, py, s * 1.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.save();
       ctx.globalAlpha = p.oxygen_ticks === 0 ? 0.75 : 1;
@@ -773,18 +773,36 @@ function drawGather(w, h) {
       rr(x0 + .5, y0 + .5, sz - 1, sz - 1, 7);
       ctx.stroke();
       if (snap.hold[i]) {
-        ctx.fillStyle = kc(snap.hold[i]);
+        const it = snap.hold[i];
+        const kind = typeof it === "string" ? it : it.kind;
+        const fresh = typeof it === "object" ? (it.fresh ?? 100) : 100;
+        const spoiled = fresh < 30;
+        ctx.fillStyle = spoiled ? "#666666" : kc(kind);
         rr(x0 + 3, y0 + 3, sz - 6, sz - 6, 5);
         ctx.fill();
         ctx.fillStyle = "rgba(255,255,255,.28)";
         rr(x0 + 3, y0 + 3, sz - 6, (sz - 6) * 0.45, 5);
         ctx.fill();
+        if (spoiled) {
+          ctx.fillStyle = "#ff4444";
+          ctx.font = "bold 10px system-ui";
+          ctx.textAlign = "center";
+          ctx.fillText("!", x0 + sz / 2, y0 + sz / 2 + 3);
+          ctx.textAlign = "left";
+        }
         holdSlots.push({ x: x0, y: y0, w: sz, h: sz, index: i });
       }
     }
     const names = {};
-    snap.hold.forEach((k) => { names[k] = (names[k] || 0) + 1; });
-    const parts = Object.keys(names).map((k) => (KIND_NAME[k] || k) + "×" + names[k]).join(", ");
+    let spoiledCount = 0;
+    snap.hold.forEach((it) => {
+      const kind = typeof it === "string" ? it : it.kind;
+      const fresh = typeof it === "object" ? (it.fresh ?? 100) : 100;
+      if (fresh < 30) spoiledCount++;
+      names[kind] = (names[kind] || 0) + 1;
+    });
+    let parts = Object.keys(names).map((k) => (KIND_NAME[k] || k) + "×" + names[k]).join(", ");
+    if (spoiledCount > 0) parts += ` (${spoiledCount} ươn ⚠️)`;
     text("GIỎ " + snap.hold.length + "/" + cap + (parts ? "  ·  " + parts : ""), gx + 12, gy + sz + 26, { size: 12, color: "#d7f2f7" });
     text("X / click o gio de bo mon", gx + 4, gy - 8, { size: 11, color: "rgba(220,245,250,.65)" });
     const hint = "WASD/mũi tên bơi · E hái / cập bến · Space bắt cá · R chơi lại";
@@ -909,13 +927,23 @@ function drawQuan(w, h) {
   ctx.beginPath(); ctx.moveTo(sx(-0.6), sy(Z) - 16);
   for (let x = -0.6; x <= X + 0.6; x += 0.5) ctx.lineTo(sx(x), sy(Z) - 16 + Math.sin(x * 1.4) * 6);
   ctx.stroke();
+  ctx.fillStyle = "rgba(255,220,130,.18)";
+  ctx.beginPath();
   for (let i = 0; i <= X * 2; i++) {
     const lx = sx(i / 2), ly = sy(Z) - 10 + Math.sin(i * 0.7 + t * 1.2) * 3;
-    const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, s * 0.8);
-    lg.addColorStop(0, "rgba(255,226,150,.85)"); lg.addColorStop(1, "rgba(255,200,90,0)");
-    ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(lx, ly, s * 0.8, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#ffe6a3"; ctx.beginPath(); ctx.arc(lx, ly, Math.max(1.5, s * 0.09), 0, Math.PI * 2); ctx.fill();
+    ctx.moveTo(lx + s * 0.7, ly);
+    ctx.arc(lx, ly, s * 0.7, 0, Math.PI * 2);
   }
+  ctx.fill();
+  ctx.fillStyle = "#ffe6a3";
+  ctx.beginPath();
+  for (let i = 0; i <= X * 2; i++) {
+    const lx = sx(i / 2), ly = sy(Z) - 10 + Math.sin(i * 0.7 + t * 1.2) * 3;
+    const r0 = Math.max(1.5, s * 0.09);
+    ctx.moveTo(lx + r0, ly);
+    ctx.arc(lx, ly, r0, 0, Math.PI * 2);
+  }
+  ctx.fill();
   // bep
   (snap.stoves || []).forEach((st, i) => {
     const px = sx(st.pos[0]), py = sy(st.pos[1]);
@@ -984,7 +1012,7 @@ function drawQuan(w, h) {
   // nguoi choi (nhin tu tren)
   const p = snap.player;
   if (p) {
-    const pos = smoothPos("qp", p.pos[0], p.pos[1], 0.35);
+    const pos = smoothPos("qp", p.pos[0], p.pos[1], 0.7);
     const px = sx(pos[0]), py = sy(pos[1]);
     if (meta.interact_radius) {
       ctx.strokeStyle = "rgba(255,240,190,.22)"; ctx.setLineDash([4, 5]);
@@ -1011,7 +1039,23 @@ function drawQuan(w, h) {
   text("Tien " + (snap.money ?? 0) + "k \u00b7 Uy tin " + (snap.reputation ?? 0).toFixed(1), 128, 43, { size: 14, color: "#d7f2f7" });
   panel(10, 68, 356, 56);
   const stock = snap.stock || {};
-  const stTxt = Object.keys(stock).sort().map((k) => (KIND_NAME[k] || k) + "x" + stock[k]).join(", ");
+  let stTxt = "";
+  if (Array.isArray(stock)) {
+    const counts = {}, freshSums = {};
+    let spoiled = 0;
+    stock.forEach((it) => {
+      counts[it.kind] = (counts[it.kind] || 0) + 1;
+      freshSums[it.kind] = (freshSums[it.kind] || 0) + (it.fresh ?? 100);
+      if ((it.fresh ?? 100) < 30) spoiled++;
+    });
+    stTxt = Object.keys(counts).sort().map((k) => {
+      const avg = (freshSums[k] / counts[k]).toFixed(0);
+      return (KIND_NAME[k] || k) + "x" + counts[k] + ` (${avg}%)`;
+    }).join(", ");
+    if (spoiled > 0) stTxt += ` · ${spoiled} ươn ⚠️`;
+  } else {
+    stTxt = Object.keys(stock).sort().map((k) => (KIND_NAME[k] || k) + "x" + stock[k]).join(", ");
+  }
   text("Kho: " + (stTxt || "(trong)"), 22, 92, { size: 12, color: "#cfe9f5" });
   const dish = snap.hand ? (typeof snap.hand === "string" ? snap.hand : snap.hand.dish_id) : null;
   text("Tay: " + (dish ? (DISH_NAME[dish] || dish) : "(trong)"), 22, 112, { size: 12, color: "#ffe9b8" });
@@ -1025,15 +1069,12 @@ function drawQuan(w, h) {
 // ================= quai / canh bao / Shop / overlay Ngay =================
 function drawMonsters(snap, sx, sy, s, t) {
   (snap.monsters || []).forEach((m, i) => {
-    const pos = smoothPos("m" + m.id, m.pos[0], m.pos[1], 0.3);
+    const pos = smoothPos("m" + m.id, m.pos[0], m.pos[1], 0.5);
     const px = sx(pos[0]), py = sy(pos[1]);
     const angry = m.state === "chase", recoil = m.state === "recoil";
     const R = s * 0.95;
-    const glow = ctx.createRadialGradient(px, py, 0, px, py, R * 2.2);
-    glow.addColorStop(0, angry ? "rgba(200,80,255,.35)" : "rgba(160,80,255,.18)");
-    glow.addColorStop(1, "rgba(160,80,255,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(px, py, R * 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = angry ? "rgba(200,80,255,.25)" : "rgba(160,80,255,.14)";
+    ctx.beginPath(); ctx.arc(px, py, R * 2.0, 0, Math.PI * 2); ctx.fill();
     ctx.save();
     ctx.translate(px, py);
     if (recoil) ctx.globalAlpha = 0.7;

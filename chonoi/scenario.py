@@ -8,7 +8,7 @@ phải có đúng một món, khách eating thiếu giá/tip...) — xem PRD-0 m
 import json
 
 from .errors import BadInput
-from .inventory import KINDS_P1, validate_items
+from .inventory import KINDS_ALL, KINDS_P1, validate_individual_items, validate_items
 
 GATHER_KEYS = {"player", "hold", "nodes", "fish", "random_fish", "time_left_ticks", "monsters", "ca_ho", "random_ho"}
 GATHER_PLAYER_KEYS = {"pos", "vel", "heading_deg", "hp", "oxygen_ticks", "zero_oxy_ticks",
@@ -127,10 +127,26 @@ def _validate_gather(b, tuning):
         raise BadInput("random_fish phải là boolean")
     if "hold" in b:
         h = b["hold"]
-        if not isinstance(h, list) or any(k not in KINDS_P1 for k in h):
-            raise BadInput("hold phải là mảng id nguyên liệu hợp lệ")
+        if not isinstance(h, list):
+            raise BadInput("hold phải là mảng")
         if len(h) > g["hold_capacity"]:
             raise BadInput("hold vượt sức chứa")
+        for item in h:
+            if isinstance(item, str):
+                if item not in KINDS_ALL:
+                    raise BadInput(f"hold có nguyên liệu lạ: {item}")
+            elif isinstance(item, dict):
+                iid = item.get("id")
+                if not isinstance(iid, str) or not iid:
+                    raise BadInput(f"hold có id không hợp lệ: {iid!r}")
+                kind = item.get("kind")
+                if kind not in KINDS_ALL:
+                    raise BadInput(f"hold có nguyên liệu lạ: {kind}")
+                fresh = item.get("fresh")
+                if isinstance(fresh, bool) or not isinstance(fresh, (int, float)) or not (0.0 <= fresh <= 100.0):
+                    raise BadInput(f"hold có fresh không hợp lệ: {fresh!r}")
+            else:
+                raise BadInput("hold phải là mảng id nguyên liệu hợp lệ")
     p = b.get("player", {})
     if not isinstance(p, dict):
         raise BadInput("player phải là object")
@@ -180,8 +196,17 @@ def _validate_quan(b, tuning):
     for arr in ("stoves", "tables", "customers"):
         if arr in b:
             _check_ids(arr, b[arr])
+    stock_items_by_id = {}
     if "stock" in b:
-        validate_items(b["stock"])
+        st = b["stock"]
+        if isinstance(st, list):
+            validated_st = validate_individual_items(st, KINDS_ALL)
+            for it in validated_st:
+                stock_items_by_id[it["id"]] = it
+        elif isinstance(st, dict):
+            validate_items(st, KINDS_ALL)
+        else:
+            raise BadInput("quan.stock phải là mảng cá thể hoặc object")
     p = b.get("player", {})
     if not isinstance(p, dict) or set(p) - QUAN_PLAYER_KEYS:
         raise BadInput("quan.player chỉ có pos và vel")
@@ -192,8 +217,34 @@ def _validate_quan(b, tuning):
         raise BadInput("player.vel phải là [x, z]")
     table_ids = [c.get("table_id") for c in b.get("customers", [])]
     known = {t["id"] for t in tuning["quan"]["tables"]} | {t.get("id") for t in b.get("tables", [])}
+    reserved_seen = set()
     for c in b.get("customers", []):
         if not isinstance(c.get("table_id"), str) or c["table_id"] not in known:
             raise BadInput(f"customers.{c['id']}: table_id phải là bàn có thật")
+        dish_id = c.get("dish_id")
+        recipe = tuning["menu"].get(dish_id, {}).get("recipe", {}) if dish_id else {}
+        res = c.get("reserved")
+        if res is not None:
+            if isinstance(res, list):
+                res_kinds = {}
+                for iid in res:
+                    if not isinstance(iid, str) or not iid:
+                        raise BadInput(f"id trong reserved không hợp lệ: {iid!r}")
+                    if iid in reserved_seen:
+                        raise BadInput(f"cá thể {iid} được giữ bởi hơn một đơn")
+                    reserved_seen.add(iid)
+                    if stock_items_by_id:
+                        if iid not in stock_items_by_id:
+                            raise BadInput(f"cá thể {iid} trong reserved không có trong stock")
+                        it = stock_items_by_id[iid]
+                        if it["fresh"] < 30:
+                            raise BadInput(f"cá thể {iid} trong reserved đã ươn (fresh < 30)")
+                        res_kinds[it["kind"]] = res_kinds.get(it["kind"], 0) + 1
+                if recipe and stock_items_by_id and res_kinds != recipe:
+                    raise BadInput(f"reserved không khớp công thức của món {dish_id}")
+            elif isinstance(res, dict):
+                validate_items(res, KINDS_ALL)
+            else:
+                raise BadInput("reserved phải là mảng id hoặc object")
     if len(table_ids) != len(set(table_ids)):
         raise BadInput("hai khách cùng bàn")

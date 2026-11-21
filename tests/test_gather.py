@@ -87,11 +87,12 @@ class GatherTest(unittest.TestCase):
         self.assertEqual(len(faint_ev), 1)
         self.assertEqual(faint_ev[0][1]["cause"], "choke")
         # LIFO: nhặt sau bỏ trước -> ["ca_linh", "bong_sung", "ca_loc"]
-        self.assertEqual(faint_ev[0][1]["lost"], ["ca_linh", "bong_sung", "ca_loc"])
+        lost_kinds = [it["kind"] if isinstance(it, dict) else it for it in faint_ev[0][1]["lost"]]
+        self.assertEqual(lost_kinds, ["ca_linh", "bong_sung", "ca_loc"])
         self.assertEqual(sim.hold, [])
         self.assertTrue(sim.done)
         self.assertEqual(sim.reason, "fainted")
-        self.assertEqual(sim.inventory_items(), {})
+        self.assertEqual(len(sim.inventory_items()), 0)
 
     # --- Lát 2: Hái nút, Bắt cá -----------------------------------------------
     def test_gather_node_success(self):
@@ -107,7 +108,8 @@ class GatherTest(unittest.TestCase):
         gather_ev = [e for e in events if e[0] == "gather"]
         self.assertEqual(len(gather_ev), 1)
         self.assertEqual(gather_ev[0][1], {"node_id": "N1", "kind": "bong_dien_dien", "amount": 1})
-        self.assertEqual(sim.hold, ["bong_dien_dien"])
+        self.assertEqual([it["kind"] for it in sim.hold], ["bong_dien_dien"])
+        self.assertEqual(sim.hold[0]["fresh"], 100.0)
         # Nút phải bắt đầu đếm regrow_ticks = 20 * 60 = 1200
         self.assertEqual(sim.nodes[0]["regrow_ticks"], 1200)
 
@@ -161,7 +163,8 @@ class GatherTest(unittest.TestCase):
         catch_ev = [e for e in events if e[0] == "fish_caught"]
         self.assertEqual(len(catch_ev), 1)
         self.assertEqual(catch_ev[0][1], {"fish_id": "F1", "kind": "ca_linh", "yield": 3})
-        self.assertEqual(sim.hold, ["ca_linh", "ca_linh", "ca_linh"])
+        self.assertEqual([it["kind"] for it in sim.hold], ["ca_linh", "ca_linh", "ca_linh"])
+        self.assertTrue(all(it["fresh"] == 100.0 for it in sim.hold))
         # Đàn cá F1 đã bị bắt và xóa khỏi sim.fish
         self.assertEqual(sim.fish, [])
         # Cooldown = 0.5s * 60 = 30 tick

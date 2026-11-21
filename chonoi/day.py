@@ -20,7 +20,8 @@ class ShopSim:
         self.earned = int(state.get("earned", 0))
         self.upgrades = dict(state.get("upgrades", {}))
         self.active = dict(state.get("active_upgrades", {}))
-        self.stock = dict(state.get("stock", {}))
+        raw_stock = state.get("stock", [])
+        self.stock = list(raw_stock) if isinstance(raw_stock, list) else dict(raw_stock)
         self.time_left_ticks = int(self.t.get("max_ticks", 600))
         self.reputation = float(state.get("reputation", tuning["quan"]["reputation_initial"]))
         self.done = False
@@ -28,7 +29,12 @@ class ShopSim:
         self.steps = 0
 
     def snapshot(self) -> dict:
-        return {"stock": {k: self.stock[k] for k in sorted(self.stock) if self.stock[k] > 0},
+        from .ids import sort_by_id
+        if isinstance(self.stock, list):
+            st = sort_by_id([dict(it) for it in self.stock])
+        else:
+            st = {k: self.stock[k] for k in sorted(self.stock) if self.stock[k] > 0}
+        return {"stock": st,
                 "time_left_ticks": self.time_left_ticks,
                 "upgrades": dict(self.upgrades), "active_upgrades": dict(self.active)}
 
@@ -191,7 +197,7 @@ class DaySim:
         self._reputation = float(self.quan.reputation)
         self.shop = ShopSim(self.tuning, {"money": self._money, "earned": self._earned,
                                           "upgrades": self.upgrades, "active_upgrades": self.active_upgrades,
-                                          "stock": dict(self.quan.stock), "reputation": self._reputation})
+                                          "stock": list(self.quan.stock) if isinstance(self.quan.stock, list) else dict(self.quan.stock), "reputation": self._reputation})
         self.phase = "shop"
         self.phase_tick = 0
         events.append(("phase_start", {}, "shop", self.day))

@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1",
+  "contract_version": "1.2",
   "team": "Nhom145",
   "team_size": 2,
   "build_cmd": "true",
@@ -121,6 +121,22 @@
         "hp": [{"level": 1, "price": 250, "hp_max": 4},
                {"level": 2, "price": 500, "hp_max": 5}]
       }
+    },
+    "freshness": {
+      "initial": 100,
+      "gather_decay_per_s": 0.5,
+      "quan_decay_per_s": 0.25,
+      "spoiled_below": 30
+    },
+    "flood": {
+      "active": false,
+      "v_surface": 1.0,
+      "d_max": 30.0,
+      "ca_linh_weight": 60,
+      "fish_max": 16,
+      "interact_radius": 1.5,
+      "bonus_ratio": 0.1,
+      "bonus_fresh_threshold": 80
     },
     "score": {"reputation_multiplier": 100}
   }

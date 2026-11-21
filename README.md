@@ -36,18 +36,17 @@ $$\text{Score} = \text{Earned} + 100 \times \lfloor \text{Reputation} \rfloor$$
 ```bash
 PYTHONPATH=tests:. python3 -m unittest discover -s tests -v
 ```
-Toàn bộ 47 unit tests bao phủ Test Contract, kiểm tra danh sách thành viên, chuyển động, lặn/hái và phục vụ quán đều đạt màu xanh (PASS).
+Toàn bộ 59 unit tests bao phủ Test Contract v1.2, kiểm tra danh sách thành viên, chuyển động, lặn/hái, phục vụ quán, độ tươi, kho cá thể và xử lý hàng ươn đều đạt màu xanh (PASS).
 
 ## Bắt buộc & Bàn giao Phase
 
 1. **Repo chung:** Repo fork public tại [HieuVuong145/K5-L3B-LAB-Day12-AI-SDLC-Nhom145](https://github.com/HieuVuong145/K5-L3B-LAB-Day12-AI-SDLC-Nhom145).
 2. **Cam kết đóng góp:** Cả 2 thành viên đều commit bằng tài khoản GitHub thật của mình (`HieuVuong145` và `ngdinhtruong28`).
 3. **Danh sách thành viên:** Đã điền đầy đủ và kiểm tra khớp trong [`TEAM.md`](TEAM.md) và [`game.contract.json`](game.contract.json).
-4. **Gắn tag phase:** `phase-1` gắn tại commit hoàn thành Phase 1 trước 1:00.
-5. **Ghi chép tối thiểu:** [`docs/verification/phase-1.md`](docs/verification/phase-1.md), [`docs/plan/phase-1.md`](docs/plan/phase-1.md), [`docs/clarify.md`](docs/clarify.md), [`docs/ai-usage-log.md`](docs/ai-usage-log.md), [`docs/standup.md`](docs/standup.md), [`docs/members/HieuVuong145.md`](docs/members/HieuVuong145.md), [`docs/members/ngdinhtruong28.md`](docs/members/ngdinhtruong28.md).
+4. **Gắn tag phase:** `phase-1` gắn tại commit hoàn thành Phase 1; `phase-3` gắn tại commit hoàn thành Phase 3.
+5. **Ghi chép tối thiểu:** [`docs/verification/phase-3.md`](docs/verification/phase-3.md), [`docs/plan/phase-3.md`](docs/plan/phase-3.md), [`CHANGELOG.md`](CHANGELOG.md), [`docs/clarify.md`](docs/clarify.md), [`docs/ai-usage-log.md`](docs/ai-usage-log.md), [`docs/standup.md`](docs/standup.md), [`docs/retro.md`](docs/retro.md), [`docs/members/HieuVuong145.md`](docs/members/HieuVuong145.md), [`docs/members/ngdinhtruong28.md`](docs/members/ngdinhtruong28.md).
 
-## Sáng tạo của nhóm (Phase 1)
+## Sáng tạo & Cải tiến của nhóm
 
-Ở Phase 1, nhóm tập trung ưu tiên tối đa vào **sự chuẩn xác và độ ổn định của luật lõi** (làm lõi đúng trước, sáng tạo sau theo mục 1 của PRD-0):
-- Xây dựng thêm bộ 15 unit tests chuyên biệt trong `tests/test_gather.py` và `tests/test_quan.py` bao phủ triệt để các góc cạnh của luồng gameplay (như giải hòa ID theo `id_key`, kiểm soát LIFO của giỏ khi ngất, tính boa theo tỷ lệ kiên nhẫn còn lại, và dọn ca khi hết giờ).
-- Đảm bảo tính tất định 100% qua Streams RNG và hoàn thành tích hợp hai tiến trình headless đúng chuẩn.
+- **Phase 1:** Xây dựng thêm bộ 15 unit tests chuyên biệt trong `tests/test_gather.py` và `tests/test_quan.py` bao phủ triệt để các góc cạnh của luồng gameplay (như giải hòa ID theo `id_key`, kiểm soát LIFO của giỏ khi ngất, tính boa theo tỷ lệ kiên nhẫn còn lại, và dọn ca khi hết giờ). Đảm bảo tính tất định 100% qua Streams RNG.
+- **Phase 3:** Thiết kế Breaking Change kho cá thể v1.2 mượt mà, hỗ trợ làm tròn float 3 chữ số thập phân (`_clean`) để đồng nhất byte-for-byte giữa file kho JSON và dòng sự kiện JSONL. Bổ sung HUD hiển thị phần trăm độ tươi trung bình và cảnh báo hàng ươn ⚠️ trực quan trong `chonoi/web/index.html`. Xây dựng bộ test chuyên sâu `tests/test_freshness.py` (11 test) kiểm tra toàn diện ngưỡng biên 30, phát sự kiện `spoiled` một lần duy nhất, giữ chỗ lại khi hàng ươn và chốt giá món `base_price` theo độ tươi.

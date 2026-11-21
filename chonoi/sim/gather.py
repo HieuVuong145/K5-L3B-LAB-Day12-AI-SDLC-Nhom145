@@ -55,7 +55,29 @@ class GatherSim:
         self.zero_oxy_ticks = p.get("zero_oxy_ticks", 0)
         self.invuln_ticks = p.get("invuln_ticks", 0)
         self.catch_cd_ticks = p.get("catch_cd_ticks", 0)
-        self.hold = list(scenario.get("hold", []))  # thứ tự nhặt, cuối mảng là mới nhất
+        self.freshness = tuning.get("freshness", {
+            "initial": 100, "gather_decay_per_s": 0.5, "quan_decay_per_s": 0.25, "spoiled_below": 30
+        })
+        self.decay_per_tick = float(self.freshness.get("gather_decay_per_s", 0.5)) / TICK
+        self.spoiled_below = float(self.freshness.get("spoiled_below", 30))
+        self.flood = dict(tuning.get("flood") or {})
+        if scenario.get("flood", {}).get("active"):
+            self.flood["active"] = True
+
+        raw_hold = scenario.get("hold", [])
+        self.hold = []
+        for it in raw_hold:
+            if isinstance(it, dict):
+                iid = it.get("id")
+                if iid:
+                    ids.reserve(iid)
+                else:
+                    iid = ids.new("I")
+                self.hold.append({"id": iid, "kind": it["kind"], "fresh": float(it.get("fresh", 100.0))})
+            elif isinstance(it, str):
+                iid = ids.new("I")
+                self.hold.append({"id": iid, "kind": it, "fresh": 100.0})
+
         self.time_left_ticks = scenario.get("time_left_ticks", int(round(t["duration_s"] * TICK)))
         self.steps = 0
         self.day = int(day)
@@ -84,8 +106,8 @@ class GatherSim:
         self.reason = None
 
     # --- giao diện cho runner -------------------------------------------------
-    def inventory_items(self) -> dict:
-        return hold_to_items(self.hold)
+    def inventory_items(self) -> list:
+        return sort_by_id([dict(it) for it in self.hold])
 
     def snapshot(self) -> dict:
         return {
@@ -94,7 +116,7 @@ class GatherSim:
                        "hp": self.hp, "hp_max": self.t["hp_max"], "zero_oxy_ticks": self.zero_oxy_ticks,
                        "invuln_ticks": self.invuln_ticks, "catch_cd_ticks": self.catch_cd_ticks,
                        "at_surface": self._at_surface()},
-            "hold": self.hold, "hold_count": len(self.hold),
+            "hold": [dict(it) for it in self.hold], "hold_count": len(self.hold),
             "hold_capacity": self.t["hold_capacity"],
             "nodes": [{"id": n["id"], "pos": n["pos"], "kind": n["kind"],
                        "ready": n["regrow_ticks"] == 0, "regrow_ticks": n["regrow_ticks"]}
@@ -109,10 +131,22 @@ class GatherSim:
     def step(self, inp):
         events = []
         self.steps += 1
-        # 1. đồng hồ và hàng có sẵn: giảm bộ đếm, nút mọc lại
+        # 1. đồng hồ và hàng có sẵn: giảm bộ đếm, nút mọc lại, hao tươi
         self.time_left_ticks = max(0, self.time_left_ticks - 1)
         self.invuln_ticks = max(0, self.invuln_ticks - 1)
         self.catch_cd_ticks = max(0, self.catch_cd_ticks - 1)
+
+        newly_spoiled = []
+        for it in self.hold:
+            old_fresh = it["fresh"]
+            new_fresh = max(0.0, round(old_fresh - self.decay_per_tick, 3))
+            it["fresh"] = new_fresh
+            if old_fresh >= self.spoiled_below and new_fresh < self.spoiled_below:
+                newly_spoiled.append(it)
+        if newly_spoiled:
+            for it in sort_by_id(newly_spoiled):
+                events.append(("spoiled", {"item_id": it["id"], "kind": it["kind"], "location": "hold"}))
+
         for n in sort_by_id(self.nodes):
             if n["regrow_ticks"] > 0:
                 n["regrow_ticks"] -= 1
@@ -158,7 +192,7 @@ class GatherSim:
                 return events
             if self._at_surface():
                 candidates = []
-                radius = float(self.t["interact_radius"])
+                radius = float(self.flood.get("interact_radius", 1.5)) if self.flood.get("active") else float(self.t["interact_radius"])
                 for n in self.nodes:
                     if n["regrow_ticks"] == 0:
                         dist = math.dist(self.pos, n["pos"])
@@ -171,7 +205,10 @@ class GatherSim:
                     free_space = capacity - len(self.hold)
                     yield_amt = int(self.t.get("node_yield", 1))
                     if free_space >= yield_amt:
-                        self.hold.extend([target_node["kind"]] * yield_amt)
+                        for _ in range(yield_amt):
+                            new_id = self.ids.new("I")
+                            it = {"id": new_id, "kind": target_node["kind"], "fresh": 100.0}
+                            self.hold.append(it)
                         target_node["regrow_ticks"] = int(round(self.t["regrow_s"] * TICK))
                         events.append(("gather", {
                             "node_id": target_node["id"],
@@ -201,7 +238,10 @@ class GatherSim:
                     capacity = int(self.t["hold_capacity"])
                     free_space = capacity - len(self.hold)
                     if free_space >= yield_amt:
-                        self.hold.extend([target_fish["kind"]] * yield_amt)
+                        for _ in range(yield_amt):
+                            new_id = self.ids.new("I")
+                            it = {"id": new_id, "kind": target_fish["kind"], "fresh": 100.0}
+                            self.hold.append(it)
                         self.fish.remove(target_fish)
                         self.catch_cd_ticks = int(round(self.t["catch_cooldown_s"] * TICK))
                         events.append(("fish_caught", {
@@ -262,8 +302,16 @@ class GatherSim:
         if (mx, md) != (0.0, 0.0):
             self.heading = math.degrees(math.atan2(md, mx)) % 360
         b = self.t["bounds"]
+        flow_vx = 0.0
+        if self.flood.get("active"):
+            d_max = float(self.flood.get("d_max", 30.0))
+            v_surface = float(self.flood.get("v_surface", 1.0))
+            depth = max(0.0, min(d_max, self.pos[1]))
+            flow_vx = v_surface * (1.0 - depth / d_max)
+
         for i, axis in enumerate(AXES):
-            self.pos[i] += self.vel[i] / TICK
+            add_vel = flow_vx if (i == 0) else 0.0
+            self.pos[i] += (self.vel[i] + add_vel) / TICK
             lo, hi = b[axis]
             if self.pos[i] <= lo:
                 self.pos[i] = lo
@@ -304,7 +352,8 @@ class GatherSim:
         fp = self.t
         if self.steps % int(fp["fish_spawn_ticks"]) != 0:
             return
-        if len(self.fish) >= int(fp["fish_max"]):
+        fish_max = int(self.flood.get("fish_max", 16)) if self.flood.get("active") else int(fp["fish_max"])
+        if len(self.fish) >= fish_max:
             return
         clearance = float(fp["fish_spawn_clearance"])
         points = []
@@ -316,7 +365,8 @@ class GatherSim:
         if not points:
             return
         kinds = sorted({k for k, _, _ in points})
-        weights = [float(fp["fish_weights"].get(k, 0)) for k in kinds]
+        weights_dict = {"ca_linh": 60, "ca_loc": 20, "ca_keo": 20} if self.flood.get("active") else fp["fish_weights"]
+        weights = [float(weights_dict.get(k, 0)) for k in kinds]
         total = sum(weights)
         rng = self.rng.get("fish_spawn")
         pick = rng.random() * total

@@ -1,4 +1,4 @@
-"""Unit test cho luật chơi Mở Quán (Quan — Lát 3 và Lát 4)."""
+"""Unit test cho luật chơi Mở Quán (Quan — Contract v1.2)."""
 
 import json
 import unittest
@@ -27,7 +27,7 @@ class QuanTest(unittest.TestCase):
     def test_customer_arrives_and_reserves_stock(self):
         sim = self._make_sim(
             scenario={"random_customers": True},
-            inventory={"ca_loc": 5}
+            inventory=[{"id": "I1", "kind": "ca_loc", "fresh": 100}, {"id": "I2", "kind": "ca_loc", "fresh": 100}]
         )
         inp = LiveInputs()
 
@@ -44,13 +44,14 @@ class QuanTest(unittest.TestCase):
         self.assertEqual(len(sim.customers), 1)
         c = sim.customers[0]
         self.assertEqual(c["state"], "waiting")
-        self.assertEqual(sim.reserved, {"ca_loc": 1})
+        self.assertEqual(len(c["reserved"]), 1)
+        self.assertEqual(c["reserved"], ["I1"])
 
     def test_no_dish_when_stock_empty(self):
         # Kho rỗng -> không nấu được món nào -> phát no_dish
         sim = self._make_sim(
             scenario={"random_customers": True},
-            inventory={}
+            inventory=[]
         )
         inp = LiveInputs()
         for _ in range(119):
@@ -64,14 +65,14 @@ class QuanTest(unittest.TestCase):
         sim = self._make_sim(scenario={
             "random_customers": False,
             "customers": [{
-                "id": "C1", "table_id": "T1", "dish_id": "ca_loc_nuong_trui",
+                "id": "C1", "order_id": "O1", "table_id": "T1", "dish_id": "ca_loc_nuong_trui",
                 "state": "waiting", "order_tick": 0, "patience_ticks_left": 2,
-                "reserved": {"ca_loc": 1}
+                "reserved": ["I1"]
             }],
-            "stock": {"ca_loc": 2}
+            "stock": [{"id": "I1", "kind": "ca_loc", "fresh": 100}, {"id": "I2", "kind": "ca_loc", "fresh": 100}]
         })
         inp = LiveInputs()
-        self.assertEqual(sim.reserved.get("ca_loc"), 1)
+        self.assertEqual(sim.customers[0]["reserved"], ["I1"])
 
         # Tick 1: patience 2 -> 1
         sim.step(inp.advance())
@@ -81,10 +82,9 @@ class QuanTest(unittest.TestCase):
         ev = sim.step(inp.advance())
         left = [e for e in ev if e[0] == "customer_left"]
         self.assertEqual(len(left), 1)
-        self.assertEqual(left[0][1]["order_id"], "C1")
+        self.assertEqual(left[0][1]["order_id"], "O1")
         self.assertEqual(left[0][1]["reason"], "patience")
         self.assertEqual(sim.reputation, 2.5)  # 3.0 + (-0.5)
-        self.assertEqual(sim.reserved.get("ca_loc", 0), 0)
         self.assertEqual(len(sim.customers), 0)
 
     # --- Lát 4: Nấu, bưng, phục vụ, thanh toán, đóng ca ------------------------
@@ -94,11 +94,11 @@ class QuanTest(unittest.TestCase):
             "random_customers": False,
             "player": {"pos": [2.0, 8.0]},
             "customers": [{
-                "id": "C1", "table_id": "T1", "dish_id": "ca_loc_nuong_trui",
+                "id": "C1", "order_id": "O1", "table_id": "T1", "dish_id": "ca_loc_nuong_trui",
                 "state": "waiting", "order_tick": 0, "patience_ticks_left": 3600,
-                "reserved": {"ca_loc": 1}
+                "reserved": ["I1"]
             }],
-            "stock": {"ca_loc": 1}
+            "stock": [{"id": "I1", "kind": "ca_loc", "fresh": 100}]
         })
         inp = LiveInputs()
 
@@ -109,8 +109,9 @@ class QuanTest(unittest.TestCase):
         self.assertEqual(len(cook_start), 1)
         self.assertEqual(cook_start[0][1]["stove_id"], "B1")
         self.assertEqual(cook_start[0][1]["dish_id"], "ca_loc_nuong_trui")
-        self.assertEqual(cook_start[0][1]["base_price"], 60)
-        self.assertEqual(sim.stock.get("ca_loc"), 0)
+        # Độ tươi hao 1 tick (100 - 0.25/60 = 99.996), base_price = floor(60 * 99.996 / 100) = 59
+        self.assertEqual(cook_start[0][1]["base_price"], 59)
+        self.assertEqual(len(sim.stock), 0)
         self.assertEqual(sim.stoves[0]["state"], "cooking")
 
         # 2. Đợi bếp nấu chín: cook_s = 6s = 360 tick
@@ -141,10 +142,10 @@ class QuanTest(unittest.TestCase):
         ev = sim.step(inp.advance())
         served = [e for e in ev if e[0] == "served"]
         self.assertEqual(len(served), 1)
-        self.assertEqual(served[0][1]["order_id"], "C1")
+        self.assertEqual(served[0][1]["order_id"], "O1")
         self.assertEqual(served[0][1]["table_id"], "T1")
-        # Phục vụ nhanh (patience còn > 50%) -> có boa: 60 * 0.2 = 12
-        self.assertEqual(served[0][1]["tip"], 12)
+        # Phục vụ nhanh (patience còn > 50%) -> có boa: floor(59 * 0.2) = 11
+        self.assertEqual(served[0][1]["tip"], 11)
         self.assertIsNone(sim.hand)
         self.assertEqual(sim.customers[0]["state"], "eating")
 
@@ -155,10 +156,10 @@ class QuanTest(unittest.TestCase):
         for _ in range(eat_ticks):
             paid_events.extend([e for e in sim.step(inp.advance()) if e[0] == "paid"])
         self.assertEqual(len(paid_events), 1)
-        self.assertEqual(paid_events[0][1]["amount"], 72)  # 60 + 12
+        self.assertEqual(paid_events[0][1]["amount"], 70)  # 59 + 11
         self.assertEqual(paid_events[0][1]["reason"], "finished_eating")
-        self.assertEqual(sim.money, 72)
-        self.assertEqual(sim.earned, 72)
+        self.assertEqual(sim.money, 70)
+        self.assertEqual(sim.earned, 70)
         self.assertEqual(sim.reputation, 3.2)  # 3.0 + 0.2
         self.assertEqual(len(sim.customers), 0)
 
@@ -169,11 +170,11 @@ class QuanTest(unittest.TestCase):
             "time_left_ticks": 1,
             "customers": [
                 {
-                    "id": "C1", "table_id": "T1", "dish_id": "goi_bong_sung",
+                    "id": "C1", "order_id": "O1", "table_id": "T1", "dish_id": "goi_bong_sung",
                     "state": "eating", "eat_ticks_left": 500, "base_price": 40, "tip": 8
                 }
             ],
-            "stock": {}
+            "stock": []
         })
         inp = LiveInputs()
         ev = sim.step(inp.advance())
