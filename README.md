@@ -1,86 +1,56 @@
-# Day 12 — AI SDLC: Quán Ăn Chợ Nổi (Nhom145)
+# Day 12 — AI SDLC: Quán Ăn Chợ Nổi
 
-> **Nhóm 2 người** (Vương Toàn Minh Hiếu & Nguyễn Đình Trường, đã phê duyệt) · Phát triển game 2D qua **4 phase** theo chuẩn AI-SDLC: Út Sen lặn bắt cá, hái bông điên điển buổi sáng, tối mở quán phục vụ khách trên nhà bè Má Tư.
+> **Làm theo nhóm 4–6 người** · Dùng AI để xây game 2D qua **4 phase** trong **3 giờ**: Út Sen lặn bắt cá, hái rau trên mặt nước rồi tối mở quán phục vụ khách.
+> **Yêu cầu từng phase mở đúng mốc giờ tại lab board:** **[Chợ Nổi Lab](https://claude.ai/artifact/E35v787wSx2wDgPTNhMVDg)** (cần đăng nhập claude.ai; có trợ giảng AI cho từng phase).
 
----
+## Bắt buộc (chỉ có thế)
 
-## 1. Yêu cầu môi trường & Bắt đầu nhanh (≤ 3 lệnh từ clone sạch)
+Cách làm việc kỹ thuật là **tự do** (push thẳng, nhánh + PR, pair, có hay không CI…). Cái bắt buộc:
 
-- **Môi trường:** Python 3.10+ (macOS / Linux / Windows). Game chỉ dùng thư viện chuẩn của Python, **không cần cài đặt thư viện bên ngoài**.
-- **Chạy từ clone sạch trong 3 lệnh:**
+1. **Một repo chung:** trưởng nhóm **fork** repo này, đặt tên `K5-L3B-LAB-Day12-AI-SDLC-<ten-nhom>`, thêm mọi thành viên làm collaborator (*Settings → Collaborators*, quyền Write) và để repo **public** (giảng viên xem được, không cần mời).
+2. **Cả nhóm cùng commit** bằng tài khoản GitHub của mình, mỗi người **≥ 3 commit có nội dung** (làm cặp thì ghi `Co-authored-by:`).
+3. **Điền [`TEAM.md`](TEAM.md):** danh sách thành viên + thỏa thuận làm việc nhóm; sửa `team_size` trong [`game.contract.json`](game.contract.json). Commit của người không có trong `TEAM.md` không được tính.
+4. **Gắn tag** `phase-1` … `phase-4` đúng hạn; chạy được tại từng tag.
+5. **Ghi chép tối thiểu:** `docs/verification/phase-n.md`, `docs/clarify.md`, `docs/ai-usage-log.md`, `docs/retro.md`, `docs/members/<handle>.md`.
+
+## Bắt đầu nhanh
 
 ```bash
-git clone https://github.com/HieuVuong145/K5-L3B-LAB-Day12-AI-SDLC-Nhom145.git && cd K5-L3B-LAB-Day12-AI-SDLC-Nhom145
-PYTHONPATH=tests:. python3 -m unittest discover -s tests -v
-python3 -m chonoi.live --mode gather
+git clone <fork-của-nhóm> && cd <fork-của-nhóm>
+PYTHONPATH=tests:. python3 -m unittest discover -s tests -v        # smoke test
+python3 -m chonoi.live --mode gather                                # chơi thử trên trình duyệt (tùy chọn)
 ```
 
-Mở trình duyệt tại địa chỉ in ra (mặc định `http://127.0.0.1:8000/`) để trải nghiệm trực tiếp.
+Game cần chế độ **headless** theo Test Contract (`python3 -m chonoi.headless --mode gather|quan …`) để được chạy và chấm tự động. **Công nghệ không ràng buộc**: khung Python trong `chonoi/` chỉ là gợi ý, chi tiết ở [`docs/STARTER.md`](docs/STARTER.md).
 
----
+## Tự do sáng tạo
 
-## 2. Cách chơi & Phím điều khiển
+Ngoài phần đề yêu cầu, nhóm được **thêm** nhân vật, loài cá/cây, sinh vật, món, bản đồ, cơ chế, câu chuyện, đồ họa, âm nhạc… với ba điều kiện: **không phá phần cố định** (tắt ở headless), ghi mục **"Sáng tạo của nhóm"** trong README của nhóm, và **làm lõi đúng trước**.
 
-- **Chế độ Buổi sáng (`gather`):**
-  - Chạy: `python3 -m chonoi.live --mode gather [--inventory-out kho.json]`
-  - `WASD` hoặc `phím mũi tên`: Bơi (độ sâu $d$ tăng khi lặn xuống).
-  - `E`: Cập bến (ở mạn thuyền bên trái) hoặc Hái nút cây trên mặt nước ($d \le 0.5\,\text{m}$).
-  - `Space`: Bắt cá khi lặn dưới nước ($d > 0.5\,\text{m}$).
-  - `H` (hoặc click nút HUD): Bật/tắt **Chế độ tương phản cao** (High Contrast Mode).
-  - `R`: Chơi lại từ đầu.
-- **Chế độ Buổi tối (`quan`):**
-  - Chạy: `python3 -m chonoi.live --mode quan --inventory docs/contracts/inventory.sample.json`
-  - `WASD`: Đi lại trong quán bè.
-  - `E`: Tương tác với Bếp B1/B2 (nấu món, nhấc món chín) và Bàn T1–T4 (phục vụ khách).
-  - `C`: Đóng ca sớm nếu muốn kết toán ngay.
-  - `H`: Bật/tắt chế độ tương phản cao.
-- **Chế độ Ngày trọn vẹn (`day`):**
-  - Chạy: `python3 -m chonoi.live --mode day`
-  - Đi qua chu kỳ hoàn chỉnh: `gather -> quan -> shop`, tích lũy tiền và mua nâng cấp oxy / máu tại Tiệm Chú Sáu.
+## Lịch 3 giờ
 
----
+| Mốc | Phase | Hạn tag |
+|---|---|---|
+| 0:00 | Phase 1 (PRD-0) | `phase-1` trước 1:00 |
+| 1:00 | Phase 2 | `phase-2` trước 1:55 |
+| 1:55 | Phase 3 | `phase-3` trước 2:30 |
+| 2:30 | Phase 4 | `phase-4` + Release `v1.0.0` trước 3:00 |
 
-## 3. Hệ thống cảnh báo dễ nhận biết & Chế độ tương phản cao
+Hết giờ mỗi phase thì gắn tag rồi đi tiếp; chỗ chưa xong ghi trung thực trong bằng chứng.
 
-1. **Thủy quái gần:** Biểu tượng và viền tím/vàng cảnh báo `⚠️ CÁ SẤU ĐANG ĐẾN GẦN! 🐊` khi Cá Sấu Năm Chèo tiến vào cự ly nguy hiểm.
-2. **Oxy sắp hết & Hết hơi:** Thông báo nổi bật `⚠️ OXY SẮP HẾT! 🫧 (Hãy nổi lên ngay)` khi oxy còn dưới 5 giây, và `🚨 HẾT OXY! 🚨 (ĐANG BỊ NGẠT)` khi thanh oxy cạn kiệt.
-3. **Khách sắp giận:** Huy hiệu màu đỏ `⚠️ KHÁCH SẮP GIẬN! 💢 Bàn <T>` khi thanh kiên nhẫn của khách giảm xuống dưới 30%.
-4. **Chế độ tương phản cao:** Chuyển đổi nền đen sâu với các đường viền vàng/đỏ/xanh đậm nét, thanh đo tương phản cao, hỗ trợ người khiếm thị màu và môi trường ánh sáng mạnh.
+## Đánh giá (100 điểm)
 
----
+| Hạng mục | Điểm |
+|---|---|
+| Test tự động ẩn (headless, gồm kiểm tra lại phase trước) | 25 |
+| Làm việc nhóm (một repo chung, chia việc, tích hợp, đổi yêu cầu) | 25 |
+| Kiểm chứng & bằng chứng | 15 |
+| Harness AI (AGENTS.md, skill, nhật ký dùng AI) | 10 |
+| Đánh giá & retro | 10 |
+| Chất lượng sản phẩm (đúng yêu cầu, mở rộng/sáng tạo) | 10 |
+| Demo | 5 |
 
-## 4. Các lệnh kiểm thử, Benchmark & Soak
+## Quy định
 
-- **Kiểm thử tự động (95/95 test case PASS 100%):**
-  ```bash
-  PYTHONPATH=tests:. python3 -m unittest discover -s tests -v
-  ```
-- **Kiểm tra danh sách thành viên:**
-  ```bash
-  python3 tools/check_team.py
-  ```
-- **Benchmark có render (Contract v1.3):**
-  ```bash
-  python3 -m chonoi.bench --seed 42 --duration 30 --out bench.json
-  ```
-  *(Đo cảnh lặn sáng lõi tại 1280×720, làm nóng 3s, đo 30s. Kết quả: avg 60.0 FPS, 1% low 55.6 FPS, load 76 ms).*
-- **Soak headless (10 Ngày liên tục không lỗi):**
-  ```bash
-  python3 -m chonoi.soak --seed 7 --days 10 --out soak.json
-  ```
-  *(Chạy 10 Ngày lặp chu kỳ D1–D5 bằng bot tất định. Kết quả: 10/10 Ngày completed, 0 crashes, thời gian < 1s).*
-
----
-
-## 5. Bàn giao & Release v1.0.0
-
-- **Git tag:** `phase-1`, `phase-3`, `phase-4`
-- **GitHub Release:** `v1.0.0`
-- **Tài liệu truy vết & Bằng chứng:**
-  - Ma trận truy vết Phase 4: [`docs/verification/phase-4.md`](docs/verification/phase-4.md)
-  - Ma trận truy vết Phase 3: [`docs/verification/phase-3.md`](docs/verification/phase-3.md)
-  - Minh chứng hiệu năng: [`docs/proof/phase-4/bench.json`](docs/proof/phase-4/bench.json) và [`docs/proof/phase-4/soak.json`](docs/proof/phase-4/soak.json)
-  - Nhật ký AI & Làm rõ: [`docs/ai-usage-log.md`](docs/ai-usage-log.md), [`docs/clarify.md`](docs/clarify.md)
-  - Tổng kết & Phản tư: [`docs/retro.md`](docs/retro.md), [`docs/members/HieuVuong145.md`](docs/members/HieuVuong145.md), [`docs/members/ngdinhtruong28.md`](docs/members/ngdinhtruong28.md)
-  - Lịch sử thay đổi: [`CHANGELOG.md`](CHANGELOG.md)
-  - Bản quyền & Đóng góp: [`LICENSE`](LICENSE), [`CREDITS.md`](CREDITS.md)
+- Dùng AI thoải mái; **không sao chép repo của nhóm khác**; bằng chứng phải thật.
+- Nhân vật, bối cảnh là bản gốc của lab; asset ngoài chỉ dùng CC0/CC-BY/MIT hoặc tự tạo, ghi nguồn trong `CREDITS.md`. Không commit API key, token, `.env`.
